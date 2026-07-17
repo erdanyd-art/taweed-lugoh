@@ -13,3 +13,11 @@ export const ATTENDANCE_STATUS_STYLES: Record<AttendanceStatus, string> = {
   Sick: 'bg-accent text-accent-foreground border-accent',
   Absent: 'bg-destructive/10 text-destructive border-destructive/20',
 }
+
+/** Solid fill colors for charts — CSS variables so they follow light/dark theme automatically. */
+export const ATTENDANCE_STATUS_CHART_COLORS: Record<AttendanceStatus, string> = {
+  Present: 'var(--success)',
+  Permission: 'var(--warning)',
+  Sick: 'var(--chart-5)',
+  Absent: 'var(--destructive)',
+}
