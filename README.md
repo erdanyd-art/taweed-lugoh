@@ -1,32 +1,28 @@
-# React + TypeScript + Vite
+# Taweed Lughoh — Admin Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Frontend-only admin dashboard for the Taweed Lughoh Arabic learning event.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React + Vite
+- Tailwind CSS v4
+- React Router
+- shadcn/ui
+- Lucide React Icons
 
-## React Compiler
+No backend, no database, no authentication — all data is mock data under [`src/mock`](./src/mock).
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Pages
 
-## Expanding the Oxlint configuration
+- Login (UI only, no real auth)
+- Dashboard — total students, classes, meetings, today's attendance
+- Students — search, add student, table
+- Attendance — filter by meeting/class, editable status per student
+- Scores — filter by class, pre-test/post-test table
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+## Getting started
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev
 ```
-
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
