@@ -43,7 +43,6 @@ export function Students() {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [classId, setClassId] = useState(classes[0]?.id ?? '')
-  const [phone, setPhone] = useState('')
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -63,12 +62,9 @@ export function Students() {
       id: `std-${Date.now()}`,
       name: name.trim(),
       classId,
-      phone: phone.trim() || '—',
-      joinedAt: new Date().toISOString().slice(0, 10),
     }
     setStudents((prev) => [newStudent, ...prev])
     setName('')
-    setPhone('')
     setClassId(classes[0]?.id ?? '')
     setOpen(false)
   }
@@ -118,15 +114,6 @@ export function Students() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="student-phone">Phone</Label>
-                  <Input
-                    id="student-phone"
-                    placeholder="0812-xxxx-xxxx"
-                    value={phone}
-                    onChange={(event) => setPhone(event.target.value)}
-                  />
                 </div>
               </div>
               <DialogFooter>

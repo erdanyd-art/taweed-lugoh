@@ -7,8 +7,6 @@ export interface Student {
   id: string
   name: string
   classId: string
-  phone: string
-  joinedAt: string
 }
 
 export interface Meeting {
