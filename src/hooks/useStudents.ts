@@ -23,10 +23,18 @@ export function useStudents() {
     return created
   }
 
+  async function updateStudent(id: string, input: Omit<Student, 'id'>) {
+    const updated = await studentsService.updateStudent(id, input)
+    setStudents((prev) =>
+      prev.map((student) => (student.id === id ? updated : student)),
+    )
+    return updated
+  }
+
   async function deleteStudent(id: string) {
     await studentsService.deleteStudent(id)
     setStudents((prev) => prev.filter((student) => student.id !== id))
   }
 
-  return { students, isLoading, addStudent, deleteStudent }
+  return { students, isLoading, addStudent, updateStudent, deleteStudent }
 }

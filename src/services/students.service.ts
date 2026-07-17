@@ -14,6 +14,15 @@ export function addStudent(input: Omit<Student, 'id'>): Promise<Student> {
   return delay(created)
 }
 
+export function updateStudent(
+  id: string,
+  input: Omit<Student, 'id'>,
+): Promise<Student> {
+  const updated: Student = { id, ...input }
+  students = students.map((student) => (student.id === id ? updated : student))
+  return delay(updated)
+}
+
 export function deleteStudent(id: string): Promise<void> {
   students = students.filter((student) => student.id !== id)
   return delay(undefined)

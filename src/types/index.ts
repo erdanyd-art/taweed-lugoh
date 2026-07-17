@@ -7,6 +7,8 @@ export interface Student {
   id: string
   name: string
   classId: string
+  preTest: number | null
+  postTest: number | null
 }
 
 export interface Meeting {
@@ -22,11 +24,4 @@ export interface AttendanceRecord {
   studentId: string
   meetingId: string
   status: AttendanceStatus
-}
-
-export interface ScoreRecord {
-  id: string
-  studentId: string
-  preTest: number
-  postTest: number
 }

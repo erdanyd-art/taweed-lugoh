@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Pencil } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { TableToolbar } from '@/components/shared/TableToolbar'
@@ -27,50 +27,65 @@ import {
 } from '@/components/ui/dialog'
 import { useStudents } from '@/hooks/useStudents'
 import { useClasses } from '@/hooks/useClasses'
-import { useScores } from '@/hooks/useScores'
+import { parseOptionalScore, validateScore } from '@/utils/validation'
 
 export function Scores() {
-  const { students, isLoading: isStudentsLoading } = useStudents()
+  const { students, isLoading: isStudentsLoading, updateStudent } = useStudents()
   const { classes, isLoading: isClassesLoading } = useClasses()
-  const { scores, isLoading: isScoresLoading, isSaving, updateScore } = useScores()
 
   const [classId, setClassId] = useState('all')
   const [search, setSearch] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
 
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null)
   const [preTest, setPreTest] = useState('')
   const [postTest, setPostTest] = useState('')
+  const [errors, setErrors] = useState<{ preTest?: string; postTest?: string }>({})
 
-  const loading = isStudentsLoading || isClassesLoading || isScoresLoading
+  const loading = isStudentsLoading || isClassesLoading
 
   const rows = useMemo(() => {
     const query = search.trim().toLowerCase()
     return students
       .filter((student) => classId === 'all' || student.classId === classId)
       .filter((student) => !query || student.name.toLowerCase().includes(query))
-      .map((student) => {
-        const score = scores.find((record) => record.studentId === student.id)
-        return { student, score }
-      })
-  }, [students, scores, classId, search])
+  }, [students, classId, search])
 
   const editingStudent = students.find(
     (student) => student.id === editingStudentId,
   )
 
+  useEffect(() => {
+    if (!editingStudent) return
+    setPreTest(editingStudent.preTest?.toString() ?? '')
+    setPostTest(editingStudent.postTest?.toString() ?? '')
+    setErrors({})
+  }, [editingStudent])
+
   function openEdit(studentId: string) {
-    const score = scores.find((record) => record.studentId === studentId)
     setEditingStudentId(studentId)
-    setPreTest(String(score?.preTest ?? ''))
-    setPostTest(String(score?.postTest ?? ''))
   }
 
   async function handleSaveScore() {
-    if (!editingStudentId) return
-    await updateScore(editingStudentId, {
-      preTest: Number(preTest) || 0,
-      postTest: Number(postTest) || 0,
+    if (!editingStudent) return
+
+    const nextErrors: typeof errors = {}
+    const preTestError = validateScore(preTest)
+    if (preTestError) nextErrors.preTest = preTestError
+    const postTestError = validateScore(postTest)
+    if (postTestError) nextErrors.postTest = postTestError
+
+    setErrors(nextErrors)
+    if (Object.keys(nextErrors).length > 0) return
+
+    setIsSaving(true)
+    await updateStudent(editingStudent.id, {
+      name: editingStudent.name,
+      classId: editingStudent.classId,
+      preTest: parseOptionalScore(preTest),
+      postTest: parseOptionalScore(postTest),
     })
+    setIsSaving(false)
     setEditingStudentId(null)
   }
 
@@ -129,17 +144,17 @@ export function Scores() {
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map(({ student, score }) => (
+              rows.map((student) => (
                 <TableRow key={student.id}>
                   <TableCell className="font-medium text-foreground">
                     {student.name}
                   </TableCell>
                   <TableCell className="text-center">
-                    <Badge variant="secondary">{score?.preTest ?? '—'}</Badge>
+                    <Badge variant="secondary">{student.preTest ?? '—'}</Badge>
                   </TableCell>
                   <TableCell className="text-center">
                     <Badge className="bg-primary/10 text-primary">
-                      {score?.postTest ?? '—'}
+                      {student.postTest ?? '—'}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
@@ -178,9 +193,14 @@ export function Scores() {
                   type="number"
                   min={0}
                   max={100}
+                  placeholder="Optional"
                   value={preTest}
                   onChange={(event) => setPreTest(event.target.value)}
+                  aria-invalid={Boolean(errors.preTest)}
                 />
+                {errors.preTest ? (
+                  <p className="text-xs text-destructive">{errors.preTest}</p>
+                ) : null}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="score-post-test">Post Test</Label>
@@ -189,9 +209,14 @@ export function Scores() {
                   type="number"
                   min={0}
                   max={100}
+                  placeholder="Optional"
                   value={postTest}
                   onChange={(event) => setPostTest(event.target.value)}
+                  aria-invalid={Boolean(errors.postTest)}
                 />
+                {errors.postTest ? (
+                  <p className="text-xs text-destructive">{errors.postTest}</p>
+                ) : null}
               </div>
             </div>
           </div>

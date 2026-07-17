@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { MoreHorizontal, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { TableToolbar } from '@/components/shared/TableToolbar'
@@ -25,7 +25,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import {
   DropdownMenu,
@@ -35,15 +34,171 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useStudents } from '@/hooks/useStudents'
 import { useClasses } from '@/hooks/useClasses'
+import { parseOptionalScore, validateScore } from '@/utils/validation'
+import type { ClassItem, Student } from '@/types'
+import { cn } from '@/lib/utils'
+
+interface StudentFormValues {
+  name: string
+  classId: string
+  preTest: number | null
+  postTest: number | null
+}
+
+type FormState = { mode: 'add' } | { mode: 'edit'; student: Student }
+
+interface StudentFormDialogProps {
+  formState: FormState | null
+  classes: ClassItem[]
+  isSaving: boolean
+  onOpenChange: (open: boolean) => void
+  onSubmit: (values: StudentFormValues) => void
+}
+
+function StudentFormDialog({
+  formState,
+  classes,
+  isSaving,
+  onOpenChange,
+  onSubmit,
+}: StudentFormDialogProps) {
+  const [name, setName] = useState('')
+  const [classId, setClassId] = useState('')
+  const [preTest, setPreTest] = useState('')
+  const [postTest, setPostTest] = useState('')
+  const [errors, setErrors] = useState<{
+    name?: string
+    classId?: string
+    preTest?: string
+    postTest?: string
+  }>({})
+
+  useEffect(() => {
+    if (!formState) return
+    if (formState.mode === 'edit') {
+      setName(formState.student.name)
+      setClassId(formState.student.classId)
+      setPreTest(formState.student.preTest?.toString() ?? '')
+      setPostTest(formState.student.postTest?.toString() ?? '')
+    } else {
+      setName('')
+      setClassId('')
+      setPreTest('')
+      setPostTest('')
+    }
+    setErrors({})
+  }, [formState])
+
+  function handleSubmit() {
+    const nextErrors: typeof errors = {}
+    if (!name.trim()) nextErrors.name = 'Name is required'
+    if (!classId) nextErrors.classId = 'Class is required'
+    const preTestError = validateScore(preTest)
+    if (preTestError) nextErrors.preTest = preTestError
+    const postTestError = validateScore(postTest)
+    if (postTestError) nextErrors.postTest = postTestError
+
+    setErrors(nextErrors)
+    if (Object.keys(nextErrors).length > 0) return
+
+    onSubmit({
+      name: name.trim(),
+      classId,
+      preTest: parseOptionalScore(preTest),
+      postTest: parseOptionalScore(postTest),
+    })
+  }
+
+  const isEdit = formState?.mode === 'edit'
+
+  return (
+    <Dialog open={formState !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{isEdit ? 'Edit Student' : 'Add Student'}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="student-name">Name</Label>
+            <Input
+              id="student-name"
+              placeholder="Full name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              aria-invalid={Boolean(errors.name)}
+            />
+            {errors.name ? (
+              <p className="text-xs text-destructive">{errors.name}</p>
+            ) : null}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="student-class">Class</Label>
+            <FilterSelect
+              value={classId}
+              onChange={setClassId}
+              options={classes.map((cls) => ({ value: cls.id, label: cls.name }))}
+              placeholder="Select class"
+              className={cn('w-full', errors.classId && 'border-destructive')}
+            />
+            {errors.classId ? (
+              <p className="text-xs text-destructive">{errors.classId}</p>
+            ) : null}
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="student-pre-test">Pre Test Score</Label>
+              <Input
+                id="student-pre-test"
+                type="number"
+                min={0}
+                max={100}
+                placeholder="Optional"
+                value={preTest}
+                onChange={(event) => setPreTest(event.target.value)}
+                aria-invalid={Boolean(errors.preTest)}
+              />
+              {errors.preTest ? (
+                <p className="text-xs text-destructive">{errors.preTest}</p>
+              ) : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="student-post-test">Post Test Score</Label>
+              <Input
+                id="student-post-test"
+                type="number"
+                min={0}
+                max={100}
+                placeholder="Optional"
+                value={postTest}
+                onChange={(event) => setPostTest(event.target.value)}
+                aria-invalid={Boolean(errors.postTest)}
+              />
+              {errors.postTest ? (
+                <p className="text-xs text-destructive">{errors.postTest}</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit} disabled={isSaving}>
+            {isSaving ? 'Saving...' : isEdit ? 'Save Changes' : 'Save Student'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 export function Students() {
-  const { students, isLoading, addStudent, deleteStudent } = useStudents()
+  const { students, isLoading, addStudent, updateStudent, deleteStudent } =
+    useStudents()
   const { classes, isLoading: isClassesLoading } = useClasses()
 
   const [search, setSearch] = useState('')
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState('')
-  const [classId, setClassId] = useState('')
+  const [formState, setFormState] = useState<FormState | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -63,15 +218,15 @@ export function Students() {
     return classes.find((cls) => cls.id === id)?.name ?? '—'
   }
 
-  async function handleAddStudent() {
-    const selectedClassId = classId || classes[0]?.id
-    if (!name.trim() || !selectedClassId) return
+  async function handleSubmitForm(values: StudentFormValues) {
     setIsSaving(true)
-    await addStudent({ name: name.trim(), classId: selectedClassId })
+    if (formState?.mode === 'edit') {
+      await updateStudent(formState.student.id, values)
+    } else {
+      await addStudent(values)
+    }
     setIsSaving(false)
-    setName('')
-    setClassId('')
-    setOpen(false)
+    setFormState(null)
   }
 
   async function handleConfirmDelete() {
@@ -88,51 +243,10 @@ export function Students() {
         title="Students"
         description="Manage registered students for Taweed Lughoh"
         action={
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="size-4" />
-                Add Student
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add Student</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
-                <div className="space-y-2">
-                  <Label htmlFor="student-name">Name</Label>
-                  <Input
-                    id="student-name"
-                    placeholder="Full name"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="student-class">Class</Label>
-                  <FilterSelect
-                    value={classId || classes[0]?.id || ''}
-                    onChange={setClassId}
-                    options={classes.map((cls) => ({
-                      value: cls.id,
-                      label: cls.name,
-                    }))}
-                    placeholder="Select class"
-                    className="w-full"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleAddStudent} disabled={isSaving}>
-                  {isSaving ? 'Saving...' : 'Save Student'}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={() => setFormState({ mode: 'add' })}>
+            <Plus className="size-4" />
+            Add Student
+          </Button>
         }
       />
 
@@ -188,7 +302,11 @@ export function Students() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>Edit</DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setFormState({ mode: 'edit', student })}
+                        >
+                          Edit
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           variant="destructive"
                           onClick={() => setDeleteId(student.id)}
@@ -204,6 +322,14 @@ export function Students() {
           </TableBody>
         </Table>
       </div>
+
+      <StudentFormDialog
+        formState={formState}
+        classes={classes}
+        isSaving={isSaving}
+        onOpenChange={(next) => !next && setFormState(null)}
+        onSubmit={handleSubmitForm}
+      />
 
       <ConfirmDialog
         open={deleteId !== null}
