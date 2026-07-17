@@ -2,7 +2,7 @@ import { Menu } from 'lucide-react'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Sidebar } from '@/components/layout/Sidebar'
+import { Sidebar } from '@/layouts/Sidebar'
 
 interface NavbarProps {
   title: string

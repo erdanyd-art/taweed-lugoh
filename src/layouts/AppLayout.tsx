@@ -1,17 +1,11 @@
 import { Outlet, useLocation } from 'react-router-dom'
-import { Sidebar } from '@/components/layout/Sidebar'
-import { Navbar } from '@/components/layout/Navbar'
-
-const pageTitles: Record<string, string> = {
-  '/dashboard': 'Dashboard',
-  '/students': 'Students',
-  '/attendance': 'Attendance',
-  '/scores': 'Scores',
-}
+import { Sidebar } from '@/layouts/Sidebar'
+import { Navbar } from '@/layouts/Navbar'
+import { PAGE_TITLES } from '@/constants/nav'
 
 export function AppLayout() {
   const location = useLocation()
-  const title = pageTitles[location.pathname] ?? 'Dashboard'
+  const title = PAGE_TITLES[location.pathname] ?? 'Dashboard'
 
   return (
     <div className="flex h-svh w-full overflow-hidden bg-background">

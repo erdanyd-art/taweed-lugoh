@@ -1,6 +1,12 @@
 import { useMemo, useState } from 'react'
-import { MoreHorizontal, Plus, Search } from 'lucide-react'
+import { MoreHorizontal, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { TableToolbar } from '@/components/shared/TableToolbar'
+import { SearchBar } from '@/components/shared/SearchBar'
+import { FilterSelect } from '@/components/shared/FilterSelect'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { LoadingState } from '@/components/shared/LoadingState'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -22,27 +28,28 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { classes, students as initialStudents } from '@/mock'
-import type { Student } from '@/types'
+import { useStudents } from '@/hooks/useStudents'
+import { useClasses } from '@/hooks/useClasses'
 
 export function Students() {
-  const [students, setStudents] = useState<Student[]>(initialStudents)
+  const { students, isLoading, addStudent, deleteStudent } = useStudents()
+  const { classes, isLoading: isClassesLoading } = useClasses()
+
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
-  const [classId, setClassId] = useState(classes[0]?.id ?? '')
+  const [classId, setClassId] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const loading = isLoading || isClassesLoading
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -56,21 +63,23 @@ export function Students() {
     return classes.find((cls) => cls.id === id)?.name ?? '—'
   }
 
-  function handleAddStudent() {
-    if (!name.trim() || !classId) return
-    const newStudent: Student = {
-      id: `std-${Date.now()}`,
-      name: name.trim(),
-      classId,
-    }
-    setStudents((prev) => [newStudent, ...prev])
+  async function handleAddStudent() {
+    const selectedClassId = classId || classes[0]?.id
+    if (!name.trim() || !selectedClassId) return
+    setIsSaving(true)
+    await addStudent({ name: name.trim(), classId: selectedClassId })
+    setIsSaving(false)
     setName('')
-    setClassId(classes[0]?.id ?? '')
+    setClassId('')
     setOpen(false)
   }
 
-  function handleDelete(id: string) {
-    setStudents((prev) => prev.filter((student) => student.id !== id))
+  async function handleConfirmDelete() {
+    if (!deleteId) return
+    setIsDeleting(true)
+    await deleteStudent(deleteId)
+    setIsDeleting(false)
+    setDeleteId(null)
   }
 
   return (
@@ -102,42 +111,40 @@ export function Students() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="student-class">Class</Label>
-                  <Select value={classId} onValueChange={setClassId}>
-                    <SelectTrigger id="student-class" className="w-full">
-                      <SelectValue placeholder="Select class" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {classes.map((cls) => (
-                        <SelectItem key={cls.id} value={cls.id}>
-                          {cls.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FilterSelect
+                    value={classId || classes[0]?.id || ''}
+                    onChange={setClassId}
+                    options={classes.map((cls) => ({
+                      value: cls.id,
+                      label: cls.name,
+                    }))}
+                    placeholder="Select class"
+                    className="w-full"
+                  />
                 </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleAddStudent}>Save Student</Button>
+                <Button onClick={handleAddStudent} disabled={isSaving}>
+                  {isSaving ? 'Saving...' : 'Save Student'}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         }
       />
 
-      <div className="mb-4 max-w-sm">
-        <div className="relative">
-          <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search students..."
+      <TableToolbar
+        search={
+          <SearchBar
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            className="pl-9"
+            onChange={setSearch}
+            placeholder="Search students..."
           />
-        </div>
-      </div>
+        }
+      />
 
       <div className="overflow-hidden rounded-lg border border-border">
         <Table>
@@ -149,13 +156,19 @@ export function Students() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {loading ? (
+              <LoadingState rows={5} columns={3} />
+            ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={3}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  No students found.
+                <TableCell colSpan={3}>
+                  <EmptyState
+                    title="No students found"
+                    description={
+                      search
+                        ? 'Try a different search term.'
+                        : 'Add your first student to get started.'
+                    }
+                  />
                 </TableCell>
               </TableRow>
             ) : (
@@ -178,7 +191,7 @@ export function Students() {
                         <DropdownMenuItem>Edit</DropdownMenuItem>
                         <DropdownMenuItem
                           variant="destructive"
-                          onClick={() => handleDelete(student.id)}
+                          onClick={() => setDeleteId(student.id)}
                         >
                           Delete
                         </DropdownMenuItem>
@@ -191,6 +204,17 @@ export function Students() {
           </TableBody>
         </Table>
       </div>
+
+      <ConfirmDialog
+        open={deleteId !== null}
+        onOpenChange={(next) => !next && setDeleteId(null)}
+        title="Delete student"
+        description="This will remove the student from the roster. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        isLoading={isDeleting}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   )
 }

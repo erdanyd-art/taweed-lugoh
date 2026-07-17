@@ -1,20 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import {
-  LayoutDashboard,
-  Users,
-  CalendarCheck,
-  GraduationCap,
-  LogOut,
-  BookOpenText,
-} from 'lucide-react'
+import { LogOut, BookOpenText } from 'lucide-react'
 import { cn } from '@/lib/utils'
-
-const navItems = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/students', label: 'Students', icon: Users },
-  { to: '/attendance', label: 'Attendance', icon: CalendarCheck },
-  { to: '/scores', label: 'Scores', icon: GraduationCap },
-]
+import { NAV_ITEMS } from '@/constants/nav'
 
 interface SidebarProps {
   className?: string
@@ -49,7 +36,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-2">
-        {navItems.map(({ to, label, icon: Icon }) => (
+        {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}

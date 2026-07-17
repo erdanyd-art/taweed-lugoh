@@ -1,6 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 import type { AttendanceStatus } from '@/types'
-import { statusStyles } from '@/lib/attendance-status'
+import { ATTENDANCE_STATUS_STYLES } from '@/constants/attendance-status'
 import { cn } from '@/lib/utils'
 
 interface StatusBadgeProps {
@@ -12,7 +12,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   return (
     <Badge
       variant="outline"
-      className={cn('font-medium', statusStyles[status], className)}
+      className={cn('font-medium', ATTENDANCE_STATUS_STYLES[status], className)}
     >
       {status}
     </Badge>

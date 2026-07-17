@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
-interface StatCardProps {
+interface DashboardCardProps {
   label: string
   value: string | number
   icon: LucideIcon
@@ -10,7 +10,13 @@ interface StatCardProps {
   className?: string
 }
 
-export function StatCard({ label, value, icon: Icon, hint, className }: StatCardProps) {
+export function DashboardCard({
+  label,
+  value,
+  icon: Icon,
+  hint,
+  className,
+}: DashboardCardProps) {
   return (
     <Card className={cn('gap-0 py-0', className)}>
       <CardContent className="flex items-start justify-between gap-4 p-5">
