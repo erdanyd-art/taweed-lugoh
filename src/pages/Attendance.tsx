@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, Download, Plus } from 'lucide-react'
+import { Check, Download } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { TableToolbar } from '@/components/shared/TableToolbar'
 import { SearchBar } from '@/components/shared/SearchBar'
 import { FilterSelect } from '@/components/shared/FilterSelect'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { LoadingState } from '@/components/shared/LoadingState'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
@@ -44,6 +46,14 @@ function meetingLabel(meeting: Meeting): string {
   })
 }
 
+function todayIso(): string {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export function Attendance() {
   const { classes, isLoading: isClassesLoading } = useClasses()
   const { students, isLoading: isStudentsLoading } = useStudents()
@@ -63,11 +73,18 @@ export function Attendance() {
   const [justSaved, setJustSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  // Meetings created via the date picker below, before any attendance has
-  // been saved for them (so they don't exist in `meetings`, which is
-  // derived from saved attendance rows). Kept only for this page visit.
+  // Meetings selected/created via the date picker below, before any
+  // attendance has been saved for them (so they don't exist yet in
+  // `meetings`, which is derived from saved attendance rows). Kept only
+  // for this page visit.
   const [extraMeetings, setExtraMeetings] = useState<Meeting[]>([])
-  const [newMeetingDate, setNewMeetingDate] = useState('')
+  // Mirrors the date picker input; kept in sync with meetingId in both
+  // directions so the two controls never show conflicting state.
+  const [dateValue, setDateValue] = useState('')
+  // A date the user picked (or today, on first load) that has no meeting
+  // yet — set to open the create-confirmation dialog, cleared once
+  // confirmed or cancelled.
+  const [pendingDate, setPendingDate] = useState<string | null>(null)
 
   const meetings = useMemo(() => deriveMeetings(records), [records])
 
@@ -76,13 +93,26 @@ export function Attendance() {
     return [...meetings, ...extraMeetings.filter((meeting) => !known.has(meeting.id))]
   }, [meetings, extraMeetings])
 
-  useEffect(() => {
-    if (!meetingId && meetings.length > 0) {
-      setMeetingId(meetings[0].id)
-    }
-  }, [meetings, meetingId])
+  const isNewMeeting =
+    meetingId !== '' && !meetings.some((meeting) => meeting.id === meetingId)
 
   const loading = isClassesLoading || isStudentsLoading || isAttendanceLoading
+
+  // On first load (once data has arrived), auto-select today's meeting if
+  // it already exists, otherwise offer to create it — same resolution the
+  // date picker uses below, just run once automatically instead of
+  // requiring a manual "+" click.
+  useEffect(() => {
+    if (loading || meetingId) return
+    const today = todayIso()
+    const existing = allMeetings.find((meeting) => meeting.id === today)
+    setDateValue(today)
+    if (existing) {
+      setMeetingId(today)
+    } else {
+      setPendingDate(today)
+    }
+  }, [loading, meetingId, allMeetings])
 
   const rows = useMemo(() => {
     if (!meetingId) return []
@@ -113,15 +143,39 @@ export function Attendance() {
     setDraftStatuses((prev) => ({ ...prev, [recordId]: status }))
   }
 
-  function handleAddMeeting() {
-    if (!newMeetingDate) return
+  /** Shared by the date picker and the initial-load effect: select the
+   * meeting for `date` if it already exists, otherwise ask before
+   * creating it. */
+  function resolveDate(date: string) {
+    setDateValue(date)
+    if (!date) return
+    const existing = allMeetings.find((meeting) => meeting.id === date)
+    if (existing) {
+      setMeetingId(date)
+    } else {
+      setPendingDate(date)
+    }
+  }
+
+  function handleSelectMeeting(id: string) {
+    setMeetingId(id)
+    setDateValue(ISO_DATE_PATTERN.test(id) ? id : '')
+  }
+
+  function confirmCreateMeeting() {
+    if (!pendingDate) return
     setExtraMeetings((prev) =>
-      prev.some((meeting) => meeting.id === newMeetingDate)
+      prev.some((meeting) => meeting.id === pendingDate)
         ? prev
-        : [...prev, { id: newMeetingDate, label: newMeetingDate, date: newMeetingDate }],
+        : [...prev, { id: pendingDate, label: pendingDate, date: pendingDate }],
     )
-    setMeetingId(newMeetingDate)
-    setNewMeetingDate('')
+    setMeetingId(pendingDate)
+    setPendingDate(null)
+  }
+
+  function cancelCreateMeeting() {
+    setPendingDate(null)
+    setDateValue(ISO_DATE_PATTERN.test(meetingId) ? meetingId : '')
   }
 
   async function handleSaveAttendance() {
@@ -217,15 +271,29 @@ export function Attendance() {
         }
         filters={
           <>
-            <FilterSelect
-              value={meetingId}
-              onChange={setMeetingId}
-              placeholder="Select meeting"
-              options={allMeetings.map((meeting) => ({
-                value: meeting.id,
-                label: meetingLabel(meeting),
-              }))}
-            />
+            <div className="flex items-center gap-2">
+              <FilterSelect
+                value={meetingId}
+                onChange={handleSelectMeeting}
+                placeholder="Select meeting"
+                options={allMeetings.map((meeting) => ({
+                  value: meeting.id,
+                  label: meetingLabel(meeting),
+                }))}
+              />
+              {meetingId ? (
+                <Badge
+                  variant="outline"
+                  className={
+                    isNewMeeting
+                      ? 'border-warning/20 bg-warning/15 text-warning'
+                      : 'border-success/20 bg-success/15 text-success'
+                  }
+                >
+                  {isNewMeeting ? 'New Meeting' : 'Existing Meeting'}
+                </Badge>
+              ) : null}
+            </div>
             <FilterSelect
               value={classId}
               onChange={setClassId}
@@ -235,25 +303,13 @@ export function Attendance() {
                 ...classes.map((cls) => ({ value: cls.id, label: cls.name })),
               ]}
             />
-            <div className="flex items-center gap-2">
-              <Input
-                type="date"
-                value={newMeetingDate}
-                onChange={(event) => setNewMeetingDate(event.target.value)}
-                className="w-40"
-                aria-label="New meeting date"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={handleAddMeeting}
-                disabled={!newMeetingDate}
-                title="Add meeting for this date"
-              >
-                <Plus className="size-4" />
-              </Button>
-            </div>
+            <Input
+              type="date"
+              value={dateValue}
+              onChange={(event) => resolveDate(event.target.value)}
+              className="w-40"
+              aria-label="Meeting date"
+            />
           </>
         }
       />
@@ -274,7 +330,7 @@ export function Attendance() {
                 <TableCell colSpan={2}>
                   <EmptyState
                     title="No meeting selected"
-                    description="Pick a meeting above, or add a new date to start taking attendance."
+                    description="Pick a date or meeting above to start taking attendance."
                   />
                 </TableCell>
               </TableRow>
@@ -325,6 +381,19 @@ export function Attendance() {
           </TableBody>
         </Table>
       </div>
+
+      <ConfirmDialog
+        open={pendingDate !== null}
+        onOpenChange={(open) => !open && cancelCreateMeeting()}
+        title="Create new meeting?"
+        description={
+          pendingDate
+            ? `No meeting exists yet for ${meetingLabel({ id: pendingDate, label: pendingDate, date: pendingDate })}. Create it and start taking attendance?`
+            : undefined
+        }
+        confirmLabel="Create Meeting"
+        onConfirm={confirmCreateMeeting}
+      />
     </div>
   )
 }
