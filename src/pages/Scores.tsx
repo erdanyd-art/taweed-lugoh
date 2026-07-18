@@ -30,7 +30,7 @@ import { useClasses } from '@/hooks/useClasses'
 import { parseOptionalScore, validateScore } from '@/utils/validation'
 
 export function Scores() {
-  const { students, isLoading: isStudentsLoading, updateStudent } = useStudents()
+  const { students, isLoading: isStudentsLoading, saveScore } = useStudents()
   const { classes, isLoading: isClassesLoading } = useClasses()
 
   const [classId, setClassId] = useState('all')
@@ -41,6 +41,7 @@ export function Scores() {
   const [preTest, setPreTest] = useState('')
   const [postTest, setPostTest] = useState('')
   const [errors, setErrors] = useState<{ preTest?: string; postTest?: string }>({})
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const loading = isStudentsLoading || isClassesLoading
 
@@ -63,6 +64,7 @@ export function Scores() {
   }, [editingStudent])
 
   function openEdit(studentId: string) {
+    setSubmitError(null)
     setEditingStudentId(studentId)
   }
 
@@ -78,15 +80,19 @@ export function Scores() {
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
 
+    setSubmitError(null)
     setIsSaving(true)
-    await updateStudent(editingStudent.id, {
-      name: editingStudent.name,
-      classId: editingStudent.classId,
-      preTest: parseOptionalScore(preTest),
-      postTest: parseOptionalScore(postTest),
-    })
-    setIsSaving(false)
-    setEditingStudentId(null)
+    try {
+      await saveScore(editingStudent.id, {
+        preTest: parseOptionalScore(preTest),
+        postTest: parseOptionalScore(postTest),
+      })
+      setEditingStudentId(null)
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to save score.')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -219,6 +225,9 @@ export function Scores() {
                 ) : null}
               </div>
             </div>
+            {submitError ? (
+              <p className="text-sm text-destructive">{submitError}</p>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingStudentId(null)}>

@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useStudents } from '@/hooks/useStudents'
 import { useClasses } from '@/hooks/useClasses'
+import { useAuth } from '@/context/AuthContext'
 import { parseOptionalScore, validateScore } from '@/utils/validation'
 import type { ClassItem, Student } from '@/types'
 import { cn } from '@/lib/utils'
@@ -51,6 +52,7 @@ interface StudentFormDialogProps {
   formState: FormState | null
   classes: ClassItem[]
   isSaving: boolean
+  error: string | null
   onOpenChange: (open: boolean) => void
   onSubmit: (values: StudentFormValues) => void
 }
@@ -59,6 +61,7 @@ function StudentFormDialog({
   formState,
   classes,
   isSaving,
+  error,
   onOpenChange,
   onSubmit,
 }: StudentFormDialogProps) {
@@ -178,6 +181,7 @@ function StudentFormDialog({
               ) : null}
             </div>
           </div>
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -196,10 +200,13 @@ export function Students() {
   const { students, isLoading, addStudent, updateStudent, deleteStudent } =
     useStudents()
   const { classes, isLoading: isClassesLoading } = useClasses()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   const [search, setSearch] = useState('')
   const [formState, setFormState] = useState<FormState | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -218,23 +225,39 @@ export function Students() {
     return classes.find((cls) => cls.id === id)?.name ?? '—'
   }
 
+  function openForm(state: FormState) {
+    setFormError(null)
+    setFormState(state)
+  }
+
   async function handleSubmitForm(values: StudentFormValues) {
+    setFormError(null)
     setIsSaving(true)
-    if (formState?.mode === 'edit') {
-      await updateStudent(formState.student.id, values)
-    } else {
-      await addStudent(values)
+    try {
+      if (formState?.mode === 'edit') {
+        await updateStudent(formState.student.id, values)
+      } else {
+        await addStudent(values)
+      }
+      setFormState(null)
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to save student.')
+    } finally {
+      setIsSaving(false)
     }
-    setIsSaving(false)
-    setFormState(null)
   }
 
   async function handleConfirmDelete() {
     if (!deleteId) return
     setIsDeleting(true)
-    await deleteStudent(deleteId)
-    setIsDeleting(false)
-    setDeleteId(null)
+    try {
+      await deleteStudent(deleteId)
+      setDeleteId(null)
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to delete student.')
+    } finally {
+      setIsDeleting(false)
+    }
   }
 
   return (
@@ -243,10 +266,12 @@ export function Students() {
         title="Students"
         description="Manage registered students for Taweed Lughoh"
         action={
-          <Button onClick={() => setFormState({ mode: 'add' })}>
-            <Plus className="size-4" />
-            Add Student
-          </Button>
+          isAdmin ? (
+            <Button onClick={() => openForm({ mode: 'add' })}>
+              <Plus className="size-4" />
+              Add Student
+            </Button>
+          ) : undefined
         }
       />
 
@@ -295,26 +320,28 @@ export function Students() {
                     <Badge variant="secondary">{className(student.classId)}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => setFormState({ mode: 'edit', student })}
-                        >
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={() => setDeleteId(student.id)}
-                        >
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {isAdmin ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => openForm({ mode: 'edit', student })}
+                          >
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={() => setDeleteId(student.id)}
+                          >
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null}
                   </TableCell>
                 </TableRow>
               ))
@@ -327,6 +354,7 @@ export function Students() {
         formState={formState}
         classes={classes}
         isSaving={isSaving}
+        error={formError}
         onOpenChange={(next) => !next && setFormState(null)}
         onSubmit={handleSubmitForm}
       />

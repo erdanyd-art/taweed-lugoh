@@ -1,16 +1,34 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BookOpenText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { useAuth } from '@/context/AuthContext'
+import { ApiError } from '@/lib/api'
 
 export function Login() {
   const navigate = useNavigate()
+  const { login } = useAuth()
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    navigate('/dashboard')
+    setError(null)
+    setIsSubmitting(true)
+    try {
+      await login(username, password)
+      navigate('/dashboard')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to sign in. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -36,18 +54,19 @@ export function Login() {
               Sign in to your account
             </h2>
             <p className="text-sm text-muted-foreground">
-              Enter your credentials to continue
+              Enter your username and password to continue
             </p>
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={handleSubmit}>
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="username">Username</Label>
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="admin@taweedlughoh.id"
-                  defaultValue="admin@taweedlughoh.id"
+                  id="username"
+                  type="text"
+                  autoComplete="username"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
                   required
                 />
               </div>
@@ -56,21 +75,21 @@ export function Login() {
                 <Input
                   id="password"
                   type="password"
-                  placeholder="••••••••"
-                  defaultValue="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
                   required
                 />
               </div>
-              <Button type="submit" className="w-full">
-                Sign In
+              {error ? (
+                <p className="text-sm text-destructive">{error}</p>
+              ) : null}
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
+                {isSubmitting ? 'Signing in...' : 'Sign In'}
               </Button>
             </form>
           </CardContent>
         </Card>
-
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          Demo dashboard — any credentials will sign you in.
-        </p>
       </div>
     </div>
   )

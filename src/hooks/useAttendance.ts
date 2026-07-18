@@ -20,9 +20,12 @@ export function useAttendance() {
 
   async function saveAttendance(updates: AttendanceRecord[]) {
     setIsSaving(true)
-    const data = await attendanceService.saveAttendance(updates)
-    setRecords(data)
-    setIsSaving(false)
+    try {
+      const data = await attendanceService.saveAttendance(updates)
+      setRecords(data)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return { records, isLoading, isSaving, saveAttendance }

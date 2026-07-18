@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as studentsService from '@/services/students.service'
+import * as scoresService from '@/services/scores.service'
 import type { Student } from '@/types'
 
 export function useStudents() {
@@ -36,5 +37,21 @@ export function useStudents() {
     setStudents((prev) => prev.filter((student) => student.id !== id))
   }
 
-  return { students, isLoading, addStudent, updateStudent, deleteStudent }
+  /**
+   * Separate from updateStudent: the backend's updateStudent action is
+   * admin-only, while saveScores allows a tutor to edit scores for their
+   * own class. Scores.tsx must use this, not updateStudent.
+   */
+  async function saveScore(
+    id: string,
+    input: { preTest: number | null; postTest: number | null },
+  ) {
+    const [updated] = await scoresService.saveScores([{ studentId: id, ...input }])
+    setStudents((prev) =>
+      prev.map((student) => (student.id === id ? updated : student)),
+    )
+    return updated
+  }
+
+  return { students, isLoading, addStudent, updateStudent, deleteStudent, saveScore }
 }
