@@ -95,7 +95,12 @@ check them:
    version, a duplicate id now blocks saving entirely (a clear
    `Duplicate student id "..."` error) rather than silently picking one
    of the rows, specifically so this gets fixed instead of intermittently
-   misfiring — give each duplicate row a distinct id.
+   misfiring — give each duplicate row a distinct id, either by hand or by
+   running `fixDuplicateStudentIds` (keeps the first occurrence's id,
+   assigns a fresh UUID to the rest, logs exactly what changed). Only run
+   it if you're sure no attendance/scores were ever successfully saved
+   under one of the shared ids — see the function's comment in
+   Backend.gs for why that matters and what it doesn't check for you.
 2. **A student's `class` cell (or a tutor's `assignedClass`) was typed as
    the class name** (e.g. `8A`) instead of its **id** (e.g. `cls-16`) from
    the Classes sheet. Run `validateStudentClasses` → **Run** → **View →

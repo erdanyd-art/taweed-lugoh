@@ -866,6 +866,49 @@ function findDuplicateStudentIds() {
 }
 
 /**
+ * Assigns a fresh unique id to every row after the first in each
+ * duplicate-id group (the first occurrence keeps its original id).
+ *
+ * Only safe to run if no attendance/scores were ever successfully saved
+ * under one of the shared ids — saveAttendance/saveScores validate the
+ * entire batch before writing anything (buildStudentsById throws before
+ * any row is touched), so a save that included a duplicate never
+ * partially went through, but this does NOT check the Attendance sheet
+ * itself. If in doubt, check there first for these ids before running.
+ * Safe to re-run: once there are no duplicates left, it's a no-op.
+ */
+function fixDuplicateStudentIds() {
+  var sheet = getOrCreateSheet(SHEET_NAMES.STUDENTS)
+  var headers = getHeaders(sheet)
+  var idCol = headers.indexOf('id') + 1
+  var students = readAll(SHEET_NAMES.STUDENTS)
+
+  var groups = {}
+  students.forEach(function (s) {
+    var id = String(s.id)
+    if (!groups[id]) groups[id] = []
+    groups[id].push(s)
+  })
+
+  var changed = 0
+  Object.keys(groups).forEach(function (id) {
+    var rows = groups[id]
+    if (rows.length < 2) return
+    for (var i = 1; i < rows.length; i++) {
+      var newId = Utilities.getUuid()
+      sheet.getRange(rows[i]._row, idCol).setValue(newId)
+      Logger.log(
+        'row ' + rows[i]._row + ' (' + rows[i].name + '): id changed from "' +
+        id + '" to "' + newId + '"',
+      )
+      changed++
+    }
+  })
+
+  Logger.log('Done. Reassigned ids for ' + changed + ' row(s). Run findDuplicateStudentIds again to confirm none remain.')
+}
+
+/**
  * Adds any of the 16 standard classes (cls-1..cls-16, "Kelas 7".."Kelas 22")
  * not already present in the Classes sheet. Existing classes are untouched.
  */
