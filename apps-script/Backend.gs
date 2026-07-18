@@ -302,6 +302,32 @@ function assertClassAccess(user, classId) {
  * scores" requirement.
  */
 
+/**
+ * Builds an id -> student lookup used by saveAttendance/saveScores to
+ * resolve each payload record's class for the access check. Throws
+ * immediately on a duplicate id instead of silently letting the last
+ * matching row win, which — with hundreds of hand-imported rows — was
+ * capable of resolving a student to a completely different row (and
+ * class) than the one the tutor actually saw on screen, surfacing as a
+ * confusing "Forbidden: no access to this class" for a class that looked
+ * right in the UI.
+ */
+function buildStudentsById(students) {
+  var byId = {}
+  students.forEach(function (s) {
+    var id = String(s.id)
+    if (byId.hasOwnProperty(id)) {
+      throw new ApiError(
+        'Duplicate student id "' + id + '" (at least "' + byId[id].name +
+        '" and "' + s.name + '") — fix this in the Students sheet before saving.',
+        409,
+      )
+    }
+    byId[id] = s
+  })
+  return byId
+}
+
 function listStudents(user) {
   var students = stripInternalAll(readAll(SHEET_NAMES.STUDENTS))
   if (user.role === ROLES.TUTOR) {
@@ -398,10 +424,7 @@ function saveAttendance(user, payload) {
     throw new ApiError('payload must be a non-empty array', 400)
   }
 
-  var studentsById = {}
-  readAll(SHEET_NAMES.STUDENTS).forEach(function (s) {
-    studentsById[String(s.id)] = s
-  })
+  var studentsById = buildStudentsById(readAll(SHEET_NAMES.STUDENTS))
 
   payload.forEach(function (record) {
     if (!record.studentId || !record.meeting || !record.status) {
@@ -491,10 +514,7 @@ function saveScores(user, payload) {
     throw new ApiError('payload must be a non-empty array', 400)
   }
 
-  var studentsById = {}
-  readAll(SHEET_NAMES.STUDENTS).forEach(function (s) {
-    studentsById[String(s.id)] = s
-  })
+  var studentsById = buildStudentsById(readAll(SHEET_NAMES.STUDENTS))
 
   payload.forEach(function (record) {
     if (!record.studentId) throw new ApiError('studentId is required', 400)
@@ -763,6 +783,86 @@ function debugClassAccess() {
   readAll(SHEET_NAMES.CLASSES).forEach(function (c) {
     Logger.log('[' + c.id + '] -> ' + c.name)
   })
+}
+
+/**
+ * Scans every row in Students and reports which ones have a `class` value
+ * that doesn't match any id in the Classes sheet — the thing manually
+ * screenshotting hundreds of rows can't realistically catch. Also logs a
+ * per-class student count so you can sanity-check the overall
+ * distribution. Run from the function dropdown → View → Logs.
+ */
+function validateStudentClasses() {
+  var classes = readAll(SHEET_NAMES.CLASSES)
+  var classIds = {}
+  classes.forEach(function (c) {
+    classIds[normalizeId(c.id)] = c.name
+  })
+
+  var students = readAll(SHEET_NAMES.STUDENTS)
+  var countByClass = {}
+  var orphaned = []
+
+  students.forEach(function (s) {
+    var classId = normalizeId(s.class)
+    if (classIds.hasOwnProperty(classId)) {
+      countByClass[classId] = (countByClass[classId] || 0) + 1
+    } else {
+      orphaned.push(s)
+    }
+  })
+
+  Logger.log('--- Student count per class ---')
+  classes.forEach(function (c) {
+    var id = normalizeId(c.id)
+    Logger.log(c.name + ' (' + id + '): ' + (countByClass[id] || 0) + ' students')
+  })
+
+  Logger.log('--- Students whose class matches NO Classes.id (' + orphaned.length + ' total) ---')
+  orphaned.slice(0, 100).forEach(function (s) {
+    Logger.log(s.id + ' | ' + s.name + ' | class: [' + s.class + ']')
+  })
+  if (orphaned.length > 100) {
+    Logger.log('... and ' + (orphaned.length - 100) + ' more, truncated.')
+  }
+  if (orphaned.length === 0) {
+    Logger.log('None — every student has a valid class id.')
+  }
+}
+
+/**
+ * Finds Students rows sharing the same id. saveAttendance/saveScores now
+ * refuse to save at all when this happens (see buildStudentsById) rather
+ * than silently resolving a student to whichever duplicate row happened
+ * to be read last — which is exactly what turned "no access to this
+ * class" into a confusing error for a class that looked correct on
+ * screen. Run this first, before saving fails and asks you to.
+ */
+function findDuplicateStudentIds() {
+  var students = readAll(SHEET_NAMES.STUDENTS)
+  var byId = {}
+  students.forEach(function (s) {
+    var id = String(s.id)
+    if (!byId[id]) byId[id] = []
+    byId[id].push(s)
+  })
+
+  var duplicateCount = 0
+  Object.keys(byId).forEach(function (id) {
+    var rows = byId[id]
+    if (rows.length < 2) return
+    duplicateCount++
+    Logger.log('Duplicate id "' + id + '" appears ' + rows.length + ' times:')
+    rows.forEach(function (s) {
+      Logger.log('  row ' + s._row + ': ' + s.name + ' | class: [' + s.class + ']')
+    })
+  })
+
+  if (duplicateCount === 0) {
+    Logger.log('No duplicate student ids found.')
+  } else {
+    Logger.log(duplicateCount + ' duplicate id(s) found — see above. Give each row a unique id (edit the id cell directly) to fix.')
+  }
 }
 
 /**

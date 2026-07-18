@@ -82,17 +82,28 @@ account that already has a password (see `fixUserAccounts` in Backend.gs).
 
 Every class match (`Students.class` vs `Users.assignedClass` vs
 `Classes.id`) is trimmed before comparing, so stray whitespace from manual
-typing isn't the cause anymore. What's left is a genuine id mismatch —
-most commonly a student's `class` cell (or a tutor's `assignedClass` cell)
-was typed as the class **name** (e.g. `8A`) instead of its **id** (e.g.
-`cls-16`) from the Classes sheet.
+typing isn't the cause anymore. Two remaining causes, in the order to
+check them:
 
-Run `debugClassAccess` from the function dropdown → **Run** → **View →
-Logs**. It prints every tutor's `assignedClass`, every distinct
-`Students.class` value, and the full Classes id→name list, each wrapped in
-`[brackets]` — compare the tutor's assignedClass against the Classes list
-to find its correct id, then check that the affected students' `class`
-cells use that same id, not the class name.
+1. **Duplicate student id.** With a large hand-imported roster, the same
+   id ending up on two rows (usually with different `class` values) is
+   easy to miss and produces a very confusing symptom: the tutor's screen
+   correctly shows only their own class, but saving fails claiming a
+   *different* class — because the row saveAttendance/saveScores resolves
+   a duplicated id to isn't necessarily the row the tutor saw on screen.
+   Run `findDuplicateStudentIds` → **Run** → **View → Logs**. As of this
+   version, a duplicate id now blocks saving entirely (a clear
+   `Duplicate student id "..."` error) rather than silently picking one
+   of the rows, specifically so this gets fixed instead of intermittently
+   misfiring — give each duplicate row a distinct id.
+2. **A student's `class` cell (or a tutor's `assignedClass`) was typed as
+   the class name** (e.g. `8A`) instead of its **id** (e.g. `cls-16`) from
+   the Classes sheet. Run `validateStudentClasses` → **Run** → **View →
+   Logs** for a per-class student count and a list of every student whose
+   `class` doesn't match any `Classes.id` at all. If a student's class
+   *is* a valid id but the wrong one (e.g. `cls-14` instead of `cls-13`),
+   that won't show up as invalid — cross-check against
+   `debugClassAccess`'s tutor/assignedClass dump instead.
 
 ## Calling the API (for whoever wires up the frontend later)
 
