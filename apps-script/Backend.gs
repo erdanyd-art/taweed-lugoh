@@ -420,6 +420,9 @@ function listAttendance(user, params) {
  * request either fully succeeds or fails without partial writes.
  */
 function saveAttendance(user, payload) {
+  // TEMP DEBUG — remove after diagnosing the status-save bug.
+  Logger.log('[DEBUG saveAttendance] received payload: ' + JSON.stringify(payload))
+
   if (!Array.isArray(payload) || payload.length === 0) {
     throw new ApiError('payload must be a non-empty array', 400)
   }
@@ -472,6 +475,9 @@ function saveAttendance(user, payload) {
   if (newRows.length > 0) {
     sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, headers.length).setValues(newRows)
   }
+
+  // TEMP DEBUG — remove after diagnosing the status-save bug.
+  Logger.log('[DEBUG saveAttendance] returning results: ' + JSON.stringify(results))
 
   return results
 }
@@ -588,12 +594,17 @@ function doGet(e) {
 }
 
 function doPost(e) {
+  // TEMP DEBUG — remove after diagnosing the status-save bug.
+  Logger.log('[DEBUG doPost] raw request body: ' + (e && e.postData && e.postData.contents))
   return handleRequest(e, 'POST')
 }
 
 function handleRequest(e, method) {
   try {
     var params = parseParams(e, method)
+    // TEMP DEBUG — remove after diagnosing the status-save bug.
+    Logger.log('[DEBUG handleRequest] parsed params: ' + JSON.stringify(params))
+
     var action = params.action
     if (!action) throw new ApiError('Missing action', 400)
 
@@ -606,6 +617,12 @@ function handleRequest(e, method) {
 
     var user = requireUser(params.userId)
     var data = route(method, action, user, params)
+
+    // TEMP DEBUG — remove after diagnosing the status-save bug.
+    if (action === 'saveAttendance') {
+      Logger.log('[DEBUG handleRequest] response data for saveAttendance: ' + JSON.stringify(data))
+    }
+
     return respond(true, data)
   } catch (err) {
     var message = err && err.message ? err.message : String(err)
@@ -638,6 +655,8 @@ function route(method, action, user, params) {
       case 'deleteStudent':
         return deleteStudentRecord(user, params.payload)
       case 'saveAttendance':
+        // TEMP DEBUG — remove after diagnosing the status-save bug.
+        Logger.log('[DEBUG route] params.payload passed to saveAttendance: ' + JSON.stringify(params.payload))
         return saveAttendance(user, params.payload)
       case 'saveScores':
         return saveScores(user, params.payload)
