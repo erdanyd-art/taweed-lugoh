@@ -107,20 +107,28 @@ export function Attendance() {
   const loading = isClassesLoading || isStudentsLoading || isAttendanceLoading
 
   // On first load (once data has arrived), auto-select today's meeting if
-  // it already exists, otherwise offer to create it — same resolution the
-  // date picker uses below, just run once automatically instead of
-  // requiring a manual "+" click.
+  // it already exists. If it doesn't, but other meetings do (e.g. one
+  // just created a moment ago, before a reload), select the most recent
+  // one instead of re-prompting to create today's — that prompt was
+  // overriding/hiding whatever meeting the user had just saved, making it
+  // look like it had vanished. Only offer to create today's meeting when
+  // there is truly no meeting to fall back to yet.
   useEffect(() => {
     if (loading || meetingId) return
     const today = todayIso()
     const existing = allMeetings.find((meeting) => meeting.id === today)
-    setDateValue(today)
     if (existing) {
+      setDateValue(today)
       setMeetingId(today)
+    } else if (meetings.length > 0) {
+      const latest = meetings[meetings.length - 1]
+      setDateValue(ISO_DATE_PATTERN.test(latest.id) ? latest.id : '')
+      setMeetingId(latest.id)
     } else {
+      setDateValue(today)
       setPendingDate(today)
     }
-  }, [loading, meetingId, allMeetings])
+  }, [loading, meetingId, allMeetings, meetings])
 
   const rows = useMemo(() => {
     if (!meetingId) return []
