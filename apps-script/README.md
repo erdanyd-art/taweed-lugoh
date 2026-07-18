@@ -54,6 +54,20 @@ that column. Fine for a small internal tool where you control who the
 sheet is shared with — restrict sharing (or hide/protect that column) if
 that's ever not true.
 
+## Attendance status always saves as "Present"?
+
+Run `debugSaveAttendanceRoundtrip` from the function dropdown → **Run** →
+**View → Logs**. It calls `saveAttendance()`/`listAttendance()` directly in
+this exact deployment (no HTTP, no frontend involved) with a throwaway
+meeting id, saving status `Sick` for one real student and reading it back
+— then deletes that test row so nothing fake is left behind. `PASS` means
+this deployment's backend logic is correct and the bug is elsewhere (most
+likely: this isn't the deployment actually being called — double check
+`VITE_API_BASE_URL` points at *this* project's Web app URL, and that
+you've deployed a new version after any recent Backend.gs change via
+**Deploy → Manage deployments → Edit → New version**). `FAIL` means the
+bug is in this backend — save the Logs output, that's what to debug from.
+
 ## Lost a password?
 
 Check the `plainPassword` column in the Users sheet first. If that's

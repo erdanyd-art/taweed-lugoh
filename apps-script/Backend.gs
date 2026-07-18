@@ -745,6 +745,68 @@ function fixTutorSetup() {
 }
 
 /**
+ * Directly exercises saveAttendance() -> listAttendance() in this exact
+ * deployment, bypassing HTTP/frontend entirely, to isolate whether a
+ * reported "status always saves as Present" bug is in the backend or
+ * somewhere else. Writes one real row under a throwaway meeting id,
+ * reads it back, checks it matches, then deletes that row so nothing
+ * fake is left in the sheet. Run from the function dropdown -> View ->
+ * Logs.
+ */
+function debugSaveAttendanceRoundtrip() {
+  var admin = readAll(SHEET_NAMES.USERS).filter(function (u) {
+    return u.role === ROLES.ADMIN
+  })[0]
+  if (!admin) {
+    Logger.log('No admin user found — cannot run this test.')
+    return
+  }
+  var adminUser = sanitizeUser(admin)
+
+  var testStudent = readAll(SHEET_NAMES.STUDENTS)[0]
+  if (!testStudent) {
+    Logger.log('No students found — cannot run this test.')
+    return
+  }
+
+  var testMeeting = '__debug_roundtrip__'
+  var testStatus = 'Sick'
+
+  Logger.log(
+    'Saving status "' + testStatus + '" for ' + testStudent.name +
+    ' (' + testStudent.id + ') on meeting "' + testMeeting + '"...',
+  )
+  var saveResult = saveAttendance(adminUser, [
+    { studentId: testStudent.id, meeting: testMeeting, status: testStatus },
+  ])
+  Logger.log('saveAttendance() returned: ' + JSON.stringify(saveResult))
+
+  var readBack = listAttendance(adminUser, { meeting: testMeeting })
+  Logger.log('listAttendance() returned: ' + JSON.stringify(readBack))
+
+  var matching = readBack.filter(function (r) {
+    return String(r.studentId) === String(testStudent.id)
+  })[0]
+
+  if (matching && matching.status === testStatus) {
+    Logger.log('PASS: status round-tripped correctly as "' + matching.status + '".')
+  } else {
+    Logger.log(
+      'FAIL: expected status "' + testStatus + '" but got: ' + JSON.stringify(matching),
+    )
+  }
+
+  var sheet = getOrCreateSheet(SHEET_NAMES.ATTENDANCE)
+  var testRow = readAll(SHEET_NAMES.ATTENDANCE).filter(function (r) {
+    return r.meeting === testMeeting
+  })[0]
+  if (testRow) {
+    sheet.deleteRow(testRow._row)
+    Logger.log('Cleaned up the test row — nothing fake left behind.')
+  }
+}
+
+/**
  * Prints every tutor's assignedClass and every distinct Students.class
  * value, each wrapped in [brackets], to the log. Run this when a tutor
  * gets "Forbidden: no access to this class" despite the class looking
