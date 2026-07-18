@@ -417,21 +417,38 @@ function saveAttendance(user, payload) {
     assertClassAccess(user, student.class)
   })
 
-  var results = payload.map(function (record) {
-    var match = { studentId: record.studentId, meeting: record.meeting }
-    var updated = updateRowByColumns(SHEET_NAMES.ATTENDANCE, match, {
-      status: record.status,
-    })
-    if (!updated) {
-      updated = {
-        studentId: record.studentId,
-        meeting: record.meeting,
-        status: record.status,
-      }
-      appendRowObject(SHEET_NAMES.ATTENDANCE, updated)
-    }
-    return updated
+  // One read of the whole sheet, then direct per-row writes below — not a
+  // fresh full-sheet scan per record (updateRowByColumns does exactly that
+  // internally, which turns an N-record save into an N x sheet-size scan;
+  // with attendance growing by ~one row per student per meeting, that got
+  // slow enough to time out as the sheet grew).
+  var sheet = getOrCreateSheet(SHEET_NAMES.ATTENDANCE)
+  var headers = getHeaders(sheet)
+  var statusCol = headers.indexOf('status') + 1
+  var rowByKey = {}
+  readAll(SHEET_NAMES.ATTENDANCE).forEach(function (row) {
+    rowByKey[row.studentId + '::' + row.meeting] = row
   })
+
+  var newRows = []
+  var results = payload.map(function (record) {
+    var existing = rowByKey[record.studentId + '::' + record.meeting]
+    if (existing) {
+      sheet.getRange(existing._row, statusCol).setValue(record.status)
+    } else {
+      newRows.push(
+        headers.map(function (key) {
+          var value = { studentId: record.studentId, meeting: record.meeting, status: record.status }[key]
+          return value === undefined ? '' : value
+        }),
+      )
+    }
+    return { studentId: record.studentId, meeting: record.meeting, status: record.status }
+  })
+
+  if (newRows.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, headers.length).setValues(newRows)
+  }
 
   return results
 }
@@ -486,19 +503,30 @@ function saveScores(user, payload) {
     assertClassAccess(user, student.class)
   })
 
-  var results = payload.map(function (record) {
-    var updates = {}
-    if (record.hasOwnProperty('preTest')) updates.preTest = record.preTest
-    if (record.hasOwnProperty('postTest')) updates.postTest = record.postTest
+  // Reuses the single readAll() above (studentsById) plus its _row indices
+  // for direct per-cell writes, instead of updateRowByColumn's fresh
+  // full-sheet scan per record — same fix as saveAttendance below.
+  var sheet = getOrCreateSheet(SHEET_NAMES.STUDENTS)
+  var headers = getHeaders(sheet)
+  var preTestCol = headers.indexOf('preTest') + 1
+  var postTestCol = headers.indexOf('postTest') + 1
 
-    var updated = updateRowByColumn(SHEET_NAMES.STUDENTS, 'id', record.studentId, updates)
-    if (!updated) throw new ApiError('Unknown studentId: ' + record.studentId, 400)
+  var results = payload.map(function (record) {
+    var student = studentsById[String(record.studentId)]
+    if (record.hasOwnProperty('preTest')) {
+      student.preTest = record.preTest
+      sheet.getRange(student._row, preTestCol).setValue(record.preTest === null ? '' : record.preTest)
+    }
+    if (record.hasOwnProperty('postTest')) {
+      student.postTest = record.postTest
+      sheet.getRange(student._row, postTestCol).setValue(record.postTest === null ? '' : record.postTest)
+    }
     return {
-      studentId: updated.id,
-      name: updated.name,
-      class: updated.class,
-      preTest: updated.preTest,
-      postTest: updated.postTest,
+      studentId: student.id,
+      name: student.name,
+      class: student.class,
+      preTest: student.preTest,
+      postTest: student.postTest,
     }
   })
 

@@ -152,3 +152,10 @@ can act as that user without a password from the second request onward.
 - **Fixed header-driven column order** — helpers read columns by header
   name from row 1, so reordering data rows is safe but renaming headers
   breaks reads/writes silently.
+- **Every request is 2-3s minimum**, even ones doing almost no work — this
+  is Apps Script Web App overhead (the redirect-to-`script.googleusercontent.com`
+  dance plus per-invocation cold start), not something the code controls.
+  `saveAttendance`/`saveScores` do read the whole target sheet once per
+  save (not once per record — see the comment in `saveAttendance` for why
+  that distinction mattered), but a single request still can't beat that
+  baseline.
