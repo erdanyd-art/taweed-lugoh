@@ -36,10 +36,18 @@ import type { AttendanceStatus, Meeting } from '@/types'
 import { cn } from '@/lib/utils'
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+// Matches the leading YYYY-MM-DD of either a plain date id ("2026-07-18")
+// or a full ISO datetime ("2026-07-18T16:00:00.000Z" — e.g. if Sheets
+// auto-converted a date-like cell value to its own Date type, which reads
+// back as a full timestamp). The date portion is taken literally and
+// never passed through a UTC/local timezone conversion, so this can't
+// shift the displayed day by one the way `new Date(fullIsoString)` could.
+const ISO_DATE_PREFIX_PATTERN = /^(\d{4}-\d{2}-\d{2})/
 
 function meetingLabel(meeting: Meeting): string {
-  if (!ISO_DATE_PATTERN.test(meeting.id)) return meeting.label
-  return new Date(`${meeting.id}T00:00:00`).toLocaleDateString('id-ID', {
+  const match = ISO_DATE_PREFIX_PATTERN.exec(meeting.id)
+  if (!match) return meeting.label
+  return new Date(`${match[1]}T00:00:00`).toLocaleDateString('id-ID', {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
