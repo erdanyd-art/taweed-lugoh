@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Download, Pencil } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Check, Download } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { TableToolbar } from '@/components/shared/TableToolbar'
 import { SearchBar } from '@/components/shared/SearchBar'
@@ -8,7 +8,6 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { LoadingState } from '@/components/shared/LoadingState'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Table,
   TableBody,
@@ -17,32 +16,37 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { useStudents } from '@/hooks/useStudents'
 import { useClasses } from '@/hooks/useClasses'
 import { parseOptionalScore, validateScore } from '@/utils/validation'
 import { exportScoreReport } from '@/utils/pdf'
+import { cn } from '@/lib/utils'
+
+interface ScoreDraft {
+  preTest: string
+  postTest: string
+}
+
+interface ScoreFieldErrors {
+  preTest?: string
+  postTest?: string
+}
 
 export function Scores() {
-  const { students, isLoading: isStudentsLoading, saveScore } = useStudents()
+  const { students, isLoading: isStudentsLoading, saveScores } = useStudents()
   const { classes, isLoading: isClassesLoading } = useClasses()
 
   const [classId, setClassId] = useState('all')
   const [search, setSearch] = useState('')
   const [isSaving, setIsSaving] = useState(false)
-
-  const [editingStudentId, setEditingStudentId] = useState<string | null>(null)
-  const [preTest, setPreTest] = useState('')
-  const [postTest, setPostTest] = useState('')
-  const [errors, setErrors] = useState<{ preTest?: string; postTest?: string }>({})
+  const [justSaved, setJustSaved] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // Unsaved edits, keyed by student id. A student only appears here once
+  // either of their fields has been touched, seeded from their current
+  // saved values so the other (untouched) field isn't lost when sent.
+  const [drafts, setDrafts] = useState<Record<string, ScoreDraft>>({})
+  const [errors, setErrors] = useState<Record<string, ScoreFieldErrors>>({})
 
   const loading = isStudentsLoading || isClassesLoading
 
@@ -52,6 +56,11 @@ export function Scores() {
       .filter((student) => classId === 'all' || student.classId === classId)
       .filter((student) => !query || student.name.toLowerCase().includes(query))
   }, [students, classId, search])
+
+  const dirtyIds = Object.keys(drafts)
+  const hasErrors = Object.values(errors).some(
+    (fieldErrors) => fieldErrors.preTest || fieldErrors.postTest,
+  )
 
   function classNameFor(id: string) {
     return classes.find((cls) => cls.id === id)?.name ?? '—'
@@ -68,44 +77,57 @@ export function Scores() {
     )
   }
 
-  const editingStudent = students.find(
-    (student) => student.id === editingStudentId,
-  )
-
-  useEffect(() => {
-    if (!editingStudent) return
-    setPreTest(editingStudent.preTest?.toString() ?? '')
-    setPostTest(editingStudent.postTest?.toString() ?? '')
-    setErrors({})
-  }, [editingStudent])
-
-  function openEdit(studentId: string) {
-    setSubmitError(null)
-    setEditingStudentId(studentId)
+  function updateDraftField(
+    student: { id: string; preTest: number | null; postTest: number | null },
+    field: keyof ScoreDraft,
+    value: string,
+  ) {
+    setDrafts((prev) => {
+      const current = prev[student.id] ?? {
+        preTest: student.preTest?.toString() ?? '',
+        postTest: student.postTest?.toString() ?? '',
+      }
+      return { ...prev, [student.id]: { ...current, [field]: value } }
+    })
+    setErrors((prev) => ({
+      ...prev,
+      [student.id]: { ...prev[student.id], [field]: validateScore(value) },
+    }))
   }
 
-  async function handleSaveScore() {
-    if (!editingStudent) return
+  async function handleSaveAllScores() {
+    if (dirtyIds.length === 0) return
 
     const nextErrors: typeof errors = {}
-    const preTestError = validateScore(preTest)
-    if (preTestError) nextErrors.preTest = preTestError
-    const postTestError = validateScore(postTest)
-    if (postTestError) nextErrors.postTest = postTestError
-
-    setErrors(nextErrors)
-    if (Object.keys(nextErrors).length > 0) return
+    let anyError = false
+    dirtyIds.forEach((id) => {
+      const draft = drafts[id]
+      const fieldErrors: ScoreFieldErrors = {
+        preTest: validateScore(draft.preTest),
+        postTest: validateScore(draft.postTest),
+      }
+      if (fieldErrors.preTest || fieldErrors.postTest) anyError = true
+      nextErrors[id] = fieldErrors
+    })
+    setErrors((prev) => ({ ...prev, ...nextErrors }))
+    if (anyError) return
 
     setSubmitError(null)
     setIsSaving(true)
     try {
-      await saveScore(editingStudent.id, {
-        preTest: parseOptionalScore(preTest),
-        postTest: parseOptionalScore(postTest),
-      })
-      setEditingStudentId(null)
+      await saveScores(
+        dirtyIds.map((id) => ({
+          studentId: id,
+          preTest: parseOptionalScore(drafts[id].preTest),
+          postTest: parseOptionalScore(drafts[id].postTest),
+        })),
+      )
+      setDrafts({})
+      setErrors({})
+      setJustSaved(true)
+      setTimeout(() => setJustSaved(false), 2000)
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to save score.')
+      setSubmitError(err instanceof Error ? err.message : 'Failed to save scores.')
     } finally {
       setIsSaving(false)
     }
@@ -117,12 +139,34 @@ export function Scores() {
         title="Scores"
         description="Pre-test and post-test results per student"
         action={
-          <Button variant="outline" onClick={handleExportPdf} disabled={rows.length === 0}>
-            <Download className="size-4" />
-            Export PDF
-          </Button>
+          <div className="flex items-center gap-3">
+            {justSaved ? (
+              <span className="flex items-center gap-1 text-sm text-success">
+                <Check className="size-4" />
+                Saved
+              </span>
+            ) : null}
+            <Button variant="outline" onClick={handleExportPdf} disabled={rows.length === 0}>
+              <Download className="size-4" />
+              Export PDF
+            </Button>
+            <Button
+              onClick={handleSaveAllScores}
+              disabled={dirtyIds.length === 0 || isSaving || hasErrors}
+            >
+              {isSaving
+                ? 'Saving...'
+                : dirtyIds.length > 0
+                  ? `Save All Scores (${dirtyIds.length})`
+                  : 'Save All Scores'}
+            </Button>
+          </div>
         }
       />
+
+      {submitError ? (
+        <p className="mb-4 text-sm text-destructive">{submitError}</p>
+      ) : null}
 
       <TableToolbar
         search={
@@ -152,15 +196,14 @@ export function Scores() {
               <TableHead>Student</TableHead>
               <TableHead className="text-center">Pre Test</TableHead>
               <TableHead className="text-center">Post Test</TableHead>
-              <TableHead className="w-20 text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <LoadingState rows={5} columns={4} />
+              <LoadingState rows={5} columns={3} />
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4}>
+                <TableCell colSpan={3}>
                   <EmptyState
                     title="No students found"
                     description={
@@ -172,95 +215,64 @@ export function Scores() {
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((student) => (
-                <TableRow key={student.id}>
-                  <TableCell className="font-medium text-foreground">
-                    {student.name}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Badge variant="secondary">{student.preTest ?? '—'}</Badge>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Badge className="bg-primary/10 text-primary">
-                      {student.postTest ?? '—'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => openEdit(student.id)}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
+              rows.map((student) => {
+                const draft = drafts[student.id]
+                const isDirty = draft !== undefined
+                const preTestValue = draft ? draft.preTest : (student.preTest?.toString() ?? '')
+                const postTestValue = draft ? draft.postTest : (student.postTest?.toString() ?? '')
+                const fieldErrors = errors[student.id]
+
+                return (
+                  <TableRow
+                    key={student.id}
+                    className={cn(isDirty && 'bg-warning/10 hover:bg-warning/15')}
+                  >
+                    <TableCell className="font-medium text-foreground">
+                      {student.name}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        placeholder="—"
+                        value={preTestValue}
+                        onChange={(event) =>
+                          updateDraftField(student, 'preTest', event.target.value)
+                        }
+                        aria-invalid={Boolean(fieldErrors?.preTest)}
+                        aria-label={`${student.name} pre test score`}
+                        className="mx-auto w-20 text-center"
+                      />
+                      {fieldErrors?.preTest ? (
+                        <p className="mt-1 text-xs text-destructive">{fieldErrors.preTest}</p>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        placeholder="—"
+                        value={postTestValue}
+                        onChange={(event) =>
+                          updateDraftField(student, 'postTest', event.target.value)
+                        }
+                        aria-invalid={Boolean(fieldErrors?.postTest)}
+                        aria-label={`${student.name} post test score`}
+                        className="mx-auto w-20 text-center"
+                      />
+                      {fieldErrors?.postTest ? (
+                        <p className="mt-1 text-xs text-destructive">{fieldErrors.postTest}</p>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                )
+              })
             )}
           </TableBody>
         </Table>
       </div>
-
-      <Dialog
-        open={editingStudentId !== null}
-        onOpenChange={(next) => !next && setEditingStudentId(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Score</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <p className="text-sm text-muted-foreground">
-              {editingStudent?.name}
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="score-pre-test">Pre Test</Label>
-                <Input
-                  id="score-pre-test"
-                  type="number"
-                  min={0}
-                  max={100}
-                  placeholder="Optional"
-                  value={preTest}
-                  onChange={(event) => setPreTest(event.target.value)}
-                  aria-invalid={Boolean(errors.preTest)}
-                />
-                {errors.preTest ? (
-                  <p className="text-xs text-destructive">{errors.preTest}</p>
-                ) : null}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="score-post-test">Post Test</Label>
-                <Input
-                  id="score-post-test"
-                  type="number"
-                  min={0}
-                  max={100}
-                  placeholder="Optional"
-                  value={postTest}
-                  onChange={(event) => setPostTest(event.target.value)}
-                  aria-invalid={Boolean(errors.postTest)}
-                />
-                {errors.postTest ? (
-                  <p className="text-xs text-destructive">{errors.postTest}</p>
-                ) : null}
-              </div>
-            </div>
-            {submitError ? (
-              <p className="text-sm text-destructive">{submitError}</p>
-            ) : null}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingStudentId(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveScore} disabled={isSaving}>
-              {isSaving ? 'Saving...' : 'Save Score'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

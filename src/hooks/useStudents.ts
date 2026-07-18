@@ -40,18 +40,19 @@ export function useStudents() {
   /**
    * Separate from updateStudent: the backend's updateStudent action is
    * admin-only, while saveScores allows a tutor to edit scores for their
-   * own class. Scores.tsx must use this, not updateStudent.
+   * own class. Scores.tsx must use this, not updateStudent. Batched — one
+   * request updates every changed student at once.
    */
-  async function saveScore(
-    id: string,
-    input: { preTest: number | null; postTest: number | null },
+  async function saveScores(
+    updates: { studentId: string; preTest: number | null; postTest: number | null }[],
   ) {
-    const [updated] = await scoresService.saveScores([{ studentId: id, ...input }])
+    const updated = await scoresService.saveScores(updates)
+    const updatedById = new Map(updated.map((student) => [student.id, student]))
     setStudents((prev) =>
-      prev.map((student) => (student.id === id ? updated : student)),
+      prev.map((student) => updatedById.get(student.id) ?? student),
     )
     return updated
   }
 
-  return { students, isLoading, addStudent, updateStudent, deleteStudent, saveScore }
+  return { students, isLoading, addStudent, updateStudent, deleteStudent, saveScores }
 }
