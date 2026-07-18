@@ -54,6 +54,26 @@ that column. Fine for a small internal tool where you control who the
 sheet is shared with — restrict sharing (or hide/protect that column) if
 that's ever not true.
 
+## A meeting "loses" its saved attendance after navigating away and back
+
+**Root cause, found and fixed:** Sheets auto-detects a date-like `meeting`
+value (e.g. `2026-07-21`, used as a meeting id for the date-picker-created
+meetings) and silently converts that cell to its own Date type. Reading it
+back then returned a full timestamp like `2026-07-21T16:00:00.000Z`
+instead of the plain string that was actually saved — which no longer
+matched the id the app used for that meeting anywhere else, making it
+look like the meeting (or whatever was just saved to it) had vanished.
+
+This is now fixed at the source: `saveAttendance` locks the `meeting`
+column to plain text before writing new rows, and `listAttendance` always
+normalizes any already-converted value back to a plain date before
+returning it (`normalizeMeetingValue` in Backend.gs). If you're on an
+older deployment, or want to clean up any cells that were already
+silently converted before this fix existed, run `fixMeetingColumnType`
+from the function dropdown → **Run** → **View → Logs**. It repairs any
+already-converted cells and locks the column format so this can't
+recur. Safe to re-run.
+
 ## Attendance status always saves as "Present"?
 
 Run `debugSaveAttendanceRoundtrip` from the function dropdown → **Run** →

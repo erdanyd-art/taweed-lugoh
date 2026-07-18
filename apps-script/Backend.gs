@@ -54,6 +54,26 @@ function normalizeId(value) {
   return String(value === undefined || value === null ? '' : value).trim()
 }
 
+/**
+ * Sheets auto-detects date-like strings (the ISO dates used as meeting
+ * ids) and silently converts that cell to its own Date type; reading it
+ * back then returns a JS Date object instead of the original string.
+ * JSON.stringify would turn that into a full "2026-07-21T16:00:00.000Z"
+ * timestamp instead of the plain "2026-07-21" that was actually saved,
+ * breaking every exact-string match this backend relies on for that
+ * meeting going forward. This converts any Date value back to a plain
+ * yyyy-MM-dd string; non-Date values pass through unchanged (e.g. the
+ * "Pertemuan 1" style legacy labels, which were never dates to begin
+ * with). See fixMeetingColumnType() for the one-time repair of already-
+ * corrupted cells and locking the column format to prevent recurrence.
+ */
+function normalizeMeetingValue(value) {
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+  }
+  return String(value === undefined || value === null ? '' : value)
+}
+
 /* ======================== Sheet helpers ======================== */
 
 function getOrCreateSheet(name) {
@@ -385,7 +405,9 @@ function deleteStudentRecord(user, payload) {
 /** Rows are keyed by (studentId, meeting) rather than a synthetic id. */
 
 function listAttendance(user, params) {
-  var records = stripInternalAll(readAll(SHEET_NAMES.ATTENDANCE))
+  var records = stripInternalAll(readAll(SHEET_NAMES.ATTENDANCE)).map(function (r) {
+    return { studentId: r.studentId, meeting: normalizeMeetingValue(r.meeting), status: r.status }
+  })
 
   if (user.role === ROLES.TUTOR) {
     var classStudentIds = readAll(SHEET_NAMES.STUDENTS)
@@ -420,9 +442,6 @@ function listAttendance(user, params) {
  * request either fully succeeds or fails without partial writes.
  */
 function saveAttendance(user, payload) {
-  // TEMP DEBUG — remove after diagnosing the status-save bug.
-  Logger.log('[DEBUG saveAttendance] received payload: ' + JSON.stringify(payload))
-
   if (!Array.isArray(payload) || payload.length === 0) {
     throw new ApiError('payload must be a non-empty array', 400)
   }
@@ -451,9 +470,15 @@ function saveAttendance(user, payload) {
   var sheet = getOrCreateSheet(SHEET_NAMES.ATTENDANCE)
   var headers = getHeaders(sheet)
   var statusCol = headers.indexOf('status') + 1
+  var meetingCol = headers.indexOf('meeting') + 1
   var rowByKey = {}
   readAll(SHEET_NAMES.ATTENDANCE).forEach(function (row) {
-    rowByKey[row.studentId + '::' + row.meeting] = row
+    // normalizeMeetingValue: the row we're keying off may already have
+    // been silently converted to a Date by Sheets on a previous write,
+    // before this request's own values ever get a chance to be — without
+    // this, an existing row would never match and every "update" would
+    // append a duplicate new row instead.
+    rowByKey[row.studentId + '::' + normalizeMeetingValue(row.meeting)] = row
   })
 
   var newRows = []
@@ -473,11 +498,16 @@ function saveAttendance(user, payload) {
   })
 
   if (newRows.length > 0) {
-    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, headers.length).setValues(newRows)
+    var startRow = sheet.getLastRow() + 1
+    // Lock the meeting column to plain text BEFORE writing, so Sheets
+    // never gets a chance to auto-convert a date-like "meeting" value
+    // (e.g. "2026-07-21") to its own Date type on these new rows — see
+    // normalizeMeetingValue() for what that conversion breaks.
+    if (meetingCol > 0) {
+      sheet.getRange(startRow, meetingCol, newRows.length, 1).setNumberFormat('@')
+    }
+    sheet.getRange(startRow, 1, newRows.length, headers.length).setValues(newRows)
   }
-
-  // TEMP DEBUG — remove after diagnosing the status-save bug.
-  Logger.log('[DEBUG saveAttendance] returning results: ' + JSON.stringify(results))
 
   return results
 }
@@ -594,17 +624,12 @@ function doGet(e) {
 }
 
 function doPost(e) {
-  // TEMP DEBUG — remove after diagnosing the status-save bug.
-  Logger.log('[DEBUG doPost] raw request body: ' + (e && e.postData && e.postData.contents))
   return handleRequest(e, 'POST')
 }
 
 function handleRequest(e, method) {
   try {
     var params = parseParams(e, method)
-    // TEMP DEBUG — remove after diagnosing the status-save bug.
-    Logger.log('[DEBUG handleRequest] parsed params: ' + JSON.stringify(params))
-
     var action = params.action
     if (!action) throw new ApiError('Missing action', 400)
 
@@ -617,12 +642,6 @@ function handleRequest(e, method) {
 
     var user = requireUser(params.userId)
     var data = route(method, action, user, params)
-
-    // TEMP DEBUG — remove after diagnosing the status-save bug.
-    if (action === 'saveAttendance') {
-      Logger.log('[DEBUG handleRequest] response data for saveAttendance: ' + JSON.stringify(data))
-    }
-
     return respond(true, data)
   } catch (err) {
     var message = err && err.message ? err.message : String(err)
@@ -655,8 +674,6 @@ function route(method, action, user, params) {
       case 'deleteStudent':
         return deleteStudentRecord(user, params.payload)
       case 'saveAttendance':
-        // TEMP DEBUG — remove after diagnosing the status-save bug.
-        Logger.log('[DEBUG route] params.payload passed to saveAttendance: ' + JSON.stringify(params.payload))
         return saveAttendance(user, params.payload)
       case 'saveScores':
         return saveScores(user, params.payload)
@@ -987,6 +1004,58 @@ function fixDuplicateStudentIds() {
   })
 
   Logger.log('Done. Reassigned ids for ' + changed + ' row(s). Run findDuplicateStudentIds again to confirm none remain.')
+}
+
+/**
+ * Repairs the root cause behind meetings that "lose" their saved
+ * attendance after navigating away and back: Sheets auto-detects a
+ * date-like "meeting" value (e.g. "2026-07-21") and silently converts
+ * that cell to its own Date type. Reading it back then returns a
+ * timestamp like "2026-07-21T16:00:00.000Z" instead of the original
+ * string, which no longer matches the plain date the app uses as that
+ * meeting's id anywhere else — the meeting looks like it reverted to
+ * defaults because, from the app's perspective, its attendance rows
+ * belong to a different (mistyped) meeting id now.
+ *
+ * This does two things:
+ *  1. Rewrites every already-converted cell in the meeting column back
+ *     to a plain yyyy-MM-dd string.
+ *  2. Locks that column's format to plain text so Sheets can't silently
+ *     convert it again on future writes (saveAttendance also does this
+ *     for newly appended rows going forward, but this covers the column
+ *     as a whole, including rows written before that existed).
+ *
+ * Safe to re-run — rows that are already plain text are left untouched.
+ */
+function fixMeetingColumnType() {
+  var sheet = getOrCreateSheet(SHEET_NAMES.ATTENDANCE)
+  var headers = getHeaders(sheet)
+  var meetingCol = headers.indexOf('meeting') + 1
+  if (meetingCol === 0) {
+    Logger.log('No "meeting" column found — nothing to fix.')
+    return
+  }
+
+  var lastRow = sheet.getLastRow()
+  if (lastRow >= 2) {
+    var values = sheet.getRange(2, meetingCol, lastRow - 1, 1).getValues()
+    var fixed = 0
+    for (var i = 0; i < values.length; i++) {
+      var value = values[i][0]
+      if (Object.prototype.toString.call(value) === '[object Date]') {
+        var iso = Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+        sheet.getRange(i + 2, meetingCol).setValue(iso)
+        Logger.log('row ' + (i + 2) + ': meeting was a Date, fixed to "' + iso + '"')
+        fixed++
+      }
+    }
+    Logger.log('Fixed ' + fixed + ' already-converted cell(s).')
+  }
+
+  // Lock the whole column (including headroom for future rows) to plain
+  // text so this can't silently happen again.
+  sheet.getRange(1, meetingCol, sheet.getMaxRows(), 1).setNumberFormat('@')
+  Logger.log('Meeting column locked to plain text format.')
 }
 
 /**

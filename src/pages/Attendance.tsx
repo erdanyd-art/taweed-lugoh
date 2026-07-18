@@ -29,25 +29,21 @@ import { useClasses } from '@/hooks/useClasses'
 import { useStudents } from '@/hooks/useStudents'
 import { useAttendance } from '@/hooks/useAttendance'
 import { buildAttendanceRecordId } from '@/services/attendance.service'
-import { deriveMeetings } from '@/utils/meetings'
+import { deriveMeetings, normalizeMeetingId } from '@/utils/meetings'
 import { exportAttendanceReport } from '@/utils/pdf'
 import { ATTENDANCE_STATUS_OPTIONS, ATTENDANCE_STATUS_STYLES } from '@/constants/attendance-status'
 import type { AttendanceStatus, Meeting } from '@/types'
 import { cn } from '@/lib/utils'
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-// Matches the leading YYYY-MM-DD of either a plain date id ("2026-07-18")
-// or a full ISO datetime ("2026-07-18T16:00:00.000Z" — e.g. if Sheets
-// auto-converted a date-like cell value to its own Date type, which reads
-// back as a full timestamp). The date portion is taken literally and
-// never passed through a UTC/local timezone conversion, so this can't
-// shift the displayed day by one the way `new Date(fullIsoString)` could.
-const ISO_DATE_PREFIX_PATTERN = /^(\d{4}-\d{2}-\d{2})/
 
+// meeting.id is already normalized to a plain date by deriveMeetings()
+// (or created that way locally, e.g. from the date picker), so this only
+// needs to recognize that shape — no separate "full ISO datetime" case to
+// handle here anymore.
 function meetingLabel(meeting: Meeting): string {
-  const match = ISO_DATE_PREFIX_PATTERN.exec(meeting.id)
-  if (!match) return meeting.label
-  return new Date(`${match[1]}T00:00:00`).toLocaleDateString('id-ID', {
+  if (!ISO_DATE_PATTERN.test(meeting.id)) return meeting.label
+  return new Date(`${meeting.id}T00:00:00`).toLocaleDateString('id-ID', {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -97,12 +93,16 @@ export function Attendance() {
   const meetings = useMemo(() => deriveMeetings(records), [records])
 
   const allMeetings = useMemo(() => {
-    const known = new Set(meetings.map((meeting) => meeting.id))
-    return [...meetings, ...extraMeetings.filter((meeting) => !known.has(meeting.id))]
+    const known = new Set(meetings.map((meeting) => normalizeMeetingId(meeting.id)))
+    return [
+      ...meetings,
+      ...extraMeetings.filter((meeting) => !known.has(normalizeMeetingId(meeting.id))),
+    ]
   }, [meetings, extraMeetings])
 
   const isNewMeeting =
-    meetingId !== '' && !meetings.some((meeting) => meeting.id === meetingId)
+    meetingId !== '' &&
+    !meetings.some((meeting) => normalizeMeetingId(meeting.id) === normalizeMeetingId(meetingId))
 
   const loading = isClassesLoading || isStudentsLoading || isAttendanceLoading
 
@@ -116,14 +116,15 @@ export function Attendance() {
   useEffect(() => {
     if (loading || meetingId) return
     const today = todayIso()
-    const existing = allMeetings.find((meeting) => meeting.id === today)
+    const existing = allMeetings.find((meeting) => normalizeMeetingId(meeting.id) === today)
     if (existing) {
       setDateValue(today)
       setMeetingId(today)
     } else if (meetings.length > 0) {
       const latest = meetings[meetings.length - 1]
-      setDateValue(ISO_DATE_PATTERN.test(latest.id) ? latest.id : '')
-      setMeetingId(latest.id)
+      const latestId = normalizeMeetingId(latest.id)
+      setDateValue(ISO_DATE_PATTERN.test(latestId) ? latestId : '')
+      setMeetingId(latestId)
     } else {
       setDateValue(today)
       setPendingDate(today)
@@ -138,7 +139,9 @@ export function Attendance() {
       .filter((student) => !query || student.name.toLowerCase().includes(query))
       .map((student) => {
         const record = records.find(
-          (item) => item.studentId === student.id && item.meetingId === meetingId,
+          (item) =>
+            item.studentId === student.id &&
+            normalizeMeetingId(item.meetingId) === normalizeMeetingId(meetingId),
         )
         const recordId = record?.id ?? buildAttendanceRecordId(student.id, meetingId)
         // No saved record yet (new student, or a meeting nobody has taken
@@ -165,7 +168,7 @@ export function Attendance() {
   function resolveDate(date: string) {
     setDateValue(date)
     if (!date) return
-    const existing = allMeetings.find((meeting) => meeting.id === date)
+    const existing = allMeetings.find((meeting) => normalizeMeetingId(meeting.id) === date)
     if (existing) {
       setMeetingId(date)
     } else {
@@ -174,8 +177,9 @@ export function Attendance() {
   }
 
   function handleSelectMeeting(id: string) {
-    setMeetingId(id)
-    setDateValue(ISO_DATE_PATTERN.test(id) ? id : '')
+    const normalized = normalizeMeetingId(id)
+    setMeetingId(normalized)
+    setDateValue(ISO_DATE_PATTERN.test(normalized) ? normalized : '')
   }
 
   function confirmCreateMeeting() {
@@ -226,7 +230,9 @@ export function Attendance() {
   }
 
   function handleExportPdf() {
-    const currentMeeting = allMeetings.find((meeting) => meeting.id === meetingId)
+    const currentMeeting = allMeetings.find(
+      (meeting) => normalizeMeetingId(meeting.id) === meetingId,
+    )
     const meetingText = currentMeeting ? meetingLabel(currentMeeting) : meetingId
     exportAttendanceReport(
       rows.map((row) => ({
@@ -293,7 +299,12 @@ export function Attendance() {
                 onChange={handleSelectMeeting}
                 placeholder="Select meeting"
                 options={allMeetings.map((meeting) => ({
-                  value: meeting.id,
+                  // Normalized so this always matches the (also
+                  // normalized) `meetingId` state the Select is
+                  // controlled by — otherwise a raw corrupted id here
+                  // wouldn't match and the trigger would show nothing
+                  // selected even though a meeting is active.
+                  value: normalizeMeetingId(meeting.id),
                   label: meetingLabel(meeting),
                 }))}
               />
