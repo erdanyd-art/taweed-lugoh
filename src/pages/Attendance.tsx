@@ -23,11 +23,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { useMeetings } from '@/hooks/useMeetings'
 import { useClasses } from '@/hooks/useClasses'
 import { useStudents } from '@/hooks/useStudents'
 import { useAttendance } from '@/hooks/useAttendance'
 import { buildAttendanceRecordId } from '@/services/attendance.service'
+import { deriveMeetings } from '@/utils/meetings'
 import { ATTENDANCE_STATUS_OPTIONS, ATTENDANCE_STATUS_STYLES } from '@/constants/attendance-status'
 import type { AttendanceStatus, Meeting } from '@/types'
 import { cn } from '@/lib/utils'
@@ -44,7 +44,6 @@ function meetingLabel(meeting: Meeting): string {
 }
 
 export function Attendance() {
-  const { meetings, isLoading: isMeetingsLoading } = useMeetings()
   const { classes, isLoading: isClassesLoading } = useClasses()
   const { students, isLoading: isStudentsLoading } = useStudents()
   const {
@@ -69,6 +68,8 @@ export function Attendance() {
   const [extraMeetings, setExtraMeetings] = useState<Meeting[]>([])
   const [newMeetingDate, setNewMeetingDate] = useState('')
 
+  const meetings = useMemo(() => deriveMeetings(records), [records])
+
   const allMeetings = useMemo(() => {
     const known = new Set(meetings.map((meeting) => meeting.id))
     return [...meetings, ...extraMeetings.filter((meeting) => !known.has(meeting.id))]
@@ -80,8 +81,7 @@ export function Attendance() {
     }
   }, [meetings, meetingId])
 
-  const loading =
-    isMeetingsLoading || isClassesLoading || isStudentsLoading || isAttendanceLoading
+  const loading = isClassesLoading || isStudentsLoading || isAttendanceLoading
 
   const rows = useMemo(() => {
     if (!meetingId) return []

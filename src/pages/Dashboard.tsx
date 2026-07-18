@@ -19,8 +19,8 @@ import { AverageScoreBarChart } from '@/components/charts/AverageScoreBarChart'
 import { AttendanceDistributionPieChart } from '@/components/charts/AttendanceDistributionPieChart'
 import { useStudents } from '@/hooks/useStudents'
 import { useClasses } from '@/hooks/useClasses'
-import { useMeetings } from '@/hooks/useMeetings'
 import { useAttendance } from '@/hooks/useAttendance'
+import { deriveMeetings } from '@/utils/meetings'
 import {
   ATTENDANCE_STATUS_OPTIONS,
   ATTENDANCE_STATUS_CHART_COLORS,
@@ -34,12 +34,11 @@ function average(values: number[]): number {
 export function Dashboard() {
   const { students, isLoading: isStudentsLoading } = useStudents()
   const { classes, isLoading: isClassesLoading } = useClasses()
-  const { meetings, isLoading: isMeetingsLoading } = useMeetings()
   const { records, isLoading: isAttendanceLoading } = useAttendance()
 
-  const loading =
-    isStudentsLoading || isClassesLoading || isMeetingsLoading || isAttendanceLoading
+  const loading = isStudentsLoading || isClassesLoading || isAttendanceLoading
 
+  const meetings = useMemo(() => deriveMeetings(records), [records])
   const latestMeeting = meetings[meetings.length - 1]
   const latestAttendance = latestMeeting
     ? records.filter((record) => record.meetingId === latestMeeting.id)
