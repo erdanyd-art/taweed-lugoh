@@ -78,6 +78,22 @@ password. It also adds any of the 16 standard classes (`cls-1`..`cls-16`,
 only touches rows that are actually missing something, and never resets an
 account that already has a password (see `fixUserAccounts` in Backend.gs).
 
+## A tutor gets "Forbidden: no access to this class"
+
+Every class match (`Students.class` vs `Users.assignedClass` vs
+`Classes.id`) is trimmed before comparing, so stray whitespace from manual
+typing isn't the cause anymore. What's left is a genuine id mismatch —
+most commonly a student's `class` cell (or a tutor's `assignedClass` cell)
+was typed as the class **name** (e.g. `8A`) instead of its **id** (e.g.
+`cls-16`) from the Classes sheet.
+
+Run `debugClassAccess` from the function dropdown → **Run** → **View →
+Logs**. It prints every tutor's `assignedClass`, every distinct
+`Students.class` value, and the full Classes id→name list, each wrapped in
+`[brackets]` — compare the tutor's assignedClass against the Classes list
+to find its correct id, then check that the affected students' `class`
+cells use that same id, not the class name.
+
 ## Calling the API (for whoever wires up the frontend later)
 
 Single base URL for everything (Apps Script Web Apps don't support path

@@ -42,6 +42,18 @@ function ApiError(message, statusCode) {
 }
 ApiError.prototype = Object.create(Error.prototype)
 
+/**
+ * Every class-id comparison (Students.class vs Users.assignedClass vs
+ * Classes.id) goes through this instead of a bare String() cast. Rows
+ * typed by hand into the sheet routinely pick up incidental leading/
+ * trailing whitespace (autocomplete, copy-paste) that's invisible in the
+ * Sheets UI but breaks exact-string matching — trimming here makes that
+ * class of mismatch a non-issue instead of a silent 403.
+ */
+function normalizeId(value) {
+  return String(value === undefined || value === null ? '' : value).trim()
+}
+
 /* ======================== Sheet helpers ======================== */
 
 function getOrCreateSheet(name) {
@@ -272,10 +284,14 @@ function requireAdmin(user) {
 /** Throws unless the user is an admin or a tutor assigned to classId. */
 function assertClassAccess(user, classId) {
   if (user.role === ROLES.ADMIN) return
-  if (user.role === ROLES.TUTOR && String(user.assignedClass) === String(classId)) {
+  if (user.role === ROLES.TUTOR && normalizeId(user.assignedClass) === normalizeId(classId)) {
     return
   }
-  throw new ApiError('Forbidden: no access to this class', 403)
+  throw new ApiError(
+    'Forbidden: no access to this class (your assignedClass is "' +
+    user.assignedClass + '", this record\'s class is "' + classId + '")',
+    403,
+  )
 }
 
 /* ======================== Students ======================== */
@@ -290,7 +306,7 @@ function listStudents(user) {
   var students = stripInternalAll(readAll(SHEET_NAMES.STUDENTS))
   if (user.role === ROLES.TUTOR) {
     students = students.filter(function (s) {
-      return String(s.class) === String(user.assignedClass)
+      return normalizeId(s.class) === normalizeId(user.assignedClass)
     })
   }
   return students
@@ -348,7 +364,7 @@ function listAttendance(user, params) {
   if (user.role === ROLES.TUTOR) {
     var classStudentIds = readAll(SHEET_NAMES.STUDENTS)
       .filter(function (s) {
-        return String(s.class) === String(user.assignedClass)
+        return normalizeId(s.class) === normalizeId(user.assignedClass)
       })
       .map(function (s) {
         return String(s.id)
@@ -433,12 +449,12 @@ function listScores(user, params) {
   var students = readAll(SHEET_NAMES.STUDENTS)
   if (user.role === ROLES.TUTOR) {
     students = students.filter(function (s) {
-      return String(s.class) === String(user.assignedClass)
+      return normalizeId(s.class) === normalizeId(user.assignedClass)
     })
   }
   if (params && params.class) {
     students = students.filter(function (s) {
-      return String(s.class) === String(params.class)
+      return normalizeId(s.class) === normalizeId(params.class)
     })
   }
   return students.map(function (s) {
@@ -497,7 +513,7 @@ function listClasses(user) {
   var classes = stripInternalAll(readAll(SHEET_NAMES.CLASSES))
   if (user.role === ROLES.TUTOR) {
     classes = classes.filter(function (c) {
-      return String(c.id) === String(user.assignedClass)
+      return normalizeId(c.id) === normalizeId(user.assignedClass)
     })
   }
   return classes
@@ -678,6 +694,47 @@ function fixTutorSetup() {
   addMissingClasses()
   fixUserAccounts()
   Logger.log('fixTutorSetup complete.')
+}
+
+/**
+ * Prints every tutor's assignedClass and every distinct Students.class
+ * value, each wrapped in [brackets], to the log. Run this when a tutor
+ * gets "Forbidden: no access to this class" despite the class looking
+ * right in the UI — the bracket wrapping makes stray leading/trailing
+ * whitespace (invisible in the Sheets UI) visible in the log, and you can
+ * eyeball whether a tutor's assignedClass has an exact match in the
+ * Students.class list. (As of this version, matching already trims
+ * whitespace automatically via normalizeId() — this is for spotting a
+ * genuine id mismatch, e.g. a student's class was typed as a class NAME
+ * like "8A" instead of its id like "cls-16".)
+ */
+function debugClassAccess() {
+  var users = readAll(SHEET_NAMES.USERS)
+  var studentClasses = readAll(SHEET_NAMES.STUDENTS).map(function (s) {
+    return s.class
+  })
+  var distinctStudentClasses = studentClasses.filter(function (value, index) {
+    return studentClasses.indexOf(value) === index
+  })
+
+  Logger.log('--- Tutor assignedClass values ---')
+  users
+    .filter(function (u) {
+      return u.role === ROLES.TUTOR
+    })
+    .forEach(function (u) {
+      Logger.log(u.username + ' -> assignedClass: [' + u.assignedClass + ']')
+    })
+
+  Logger.log('--- Distinct Students.class values ---')
+  distinctStudentClasses.forEach(function (value) {
+    Logger.log('[' + value + ']')
+  })
+
+  Logger.log('--- Classes sheet (id -> name) ---')
+  readAll(SHEET_NAMES.CLASSES).forEach(function (c) {
+    Logger.log('[' + c.id + '] -> ' + c.name)
+  })
 }
 
 /**
