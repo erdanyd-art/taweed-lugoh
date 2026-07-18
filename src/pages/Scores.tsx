@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Pencil } from 'lucide-react'
+import { Download, Pencil } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { TableToolbar } from '@/components/shared/TableToolbar'
 import { SearchBar } from '@/components/shared/SearchBar'
@@ -28,6 +28,7 @@ import {
 import { useStudents } from '@/hooks/useStudents'
 import { useClasses } from '@/hooks/useClasses'
 import { parseOptionalScore, validateScore } from '@/utils/validation'
+import { exportScoreReport } from '@/utils/pdf'
 
 export function Scores() {
   const { students, isLoading: isStudentsLoading, saveScore } = useStudents()
@@ -51,6 +52,21 @@ export function Scores() {
       .filter((student) => classId === 'all' || student.classId === classId)
       .filter((student) => !query || student.name.toLowerCase().includes(query))
   }, [students, classId, search])
+
+  function classNameFor(id: string) {
+    return classes.find((cls) => cls.id === id)?.name ?? '—'
+  }
+
+  function handleExportPdf() {
+    exportScoreReport(
+      rows.map((student) => ({
+        studentName: student.name,
+        className: classNameFor(student.classId),
+        preTest: student.preTest,
+        postTest: student.postTest,
+      })),
+    )
+  }
 
   const editingStudent = students.find(
     (student) => student.id === editingStudentId,
@@ -100,6 +116,12 @@ export function Scores() {
       <PageHeader
         title="Scores"
         description="Pre-test and post-test results per student"
+        action={
+          <Button variant="outline" onClick={handleExportPdf} disabled={rows.length === 0}>
+            <Download className="size-4" />
+            Export PDF
+          </Button>
+        }
       />
 
       <TableToolbar

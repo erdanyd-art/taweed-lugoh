@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, Plus } from 'lucide-react'
+import { Check, Download, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { TableToolbar } from '@/components/shared/TableToolbar'
 import { SearchBar } from '@/components/shared/SearchBar'
@@ -28,6 +28,7 @@ import { useStudents } from '@/hooks/useStudents'
 import { useAttendance } from '@/hooks/useAttendance'
 import { buildAttendanceRecordId } from '@/services/attendance.service'
 import { deriveMeetings } from '@/utils/meetings'
+import { exportAttendanceReport } from '@/utils/pdf'
 import { ATTENDANCE_STATUS_OPTIONS, ATTENDANCE_STATUS_STYLES } from '@/constants/attendance-status'
 import type { AttendanceStatus, Meeting } from '@/types'
 import { cn } from '@/lib/utils'
@@ -150,6 +151,23 @@ export function Attendance() {
     }
   }
 
+  function classNameFor(id: string) {
+    return classes.find((cls) => cls.id === id)?.name ?? '—'
+  }
+
+  function handleExportPdf() {
+    const currentMeeting = allMeetings.find((meeting) => meeting.id === meetingId)
+    const meetingText = currentMeeting ? meetingLabel(currentMeeting) : meetingId
+    exportAttendanceReport(
+      rows.map((row) => ({
+        studentName: row.student.name,
+        className: classNameFor(row.student.classId),
+        meeting: meetingText,
+        status: row.status,
+      })),
+    )
+  }
+
   return (
     <div>
       <PageHeader
@@ -163,6 +181,14 @@ export function Attendance() {
                 Saved
               </span>
             ) : null}
+            <Button
+              variant="outline"
+              onClick={handleExportPdf}
+              disabled={rows.length === 0}
+            >
+              <Download className="size-4" />
+              Export PDF
+            </Button>
             <Button
               onClick={handleSaveAttendance}
               disabled={dirtyCount === 0 || isSaving}
