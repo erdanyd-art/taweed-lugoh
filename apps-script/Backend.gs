@@ -782,7 +782,14 @@ function resetPassword(username) {
  * unmodified forever.
  */
 function createTutorsForClasses() {
-  var TARGET_CLASS_NAMES = ['7A', '7B', '7C', '7D', '7E', '10A', '10B', '10C', '10D']
+  var TARGET_CLASS_NAMES = [
+    '7A', '7B', '7C', '7D', '7E',
+    '8A', '8B', '8C', '8D', '8E',
+    '9A', '9B', '9C', '9D',
+    '10A', '10B', '10C', '10D',
+    '11A', '11B', '11C', '11D',
+    '12A', '12B', '12C',
+  ]
 
   ensurePlainPasswordColumn()
 
@@ -847,10 +854,26 @@ function setCustomPasswords() {
     'tutor.7c': 'kelas7c',
     'tutor.7d': 'kelas7d',
     'tutor.7e': 'kelas7e',
+    'tutor.8a': 'kelas8a',
+    'tutor.8b': 'kelas8b',
+    'tutor.8c': 'kelas8c',
+    'tutor.8d': 'kelas8d',
+    'tutor.8e': 'kelas8e',
+    'tutor.9a': 'kelas9a',
+    'tutor.9b': 'kelas9b',
+    'tutor.9c': 'kelas9c',
+    'tutor.9d': 'kelas9d',
     'tutor.10a': 'kelas10a',
     'tutor.10b': 'kelas10b',
     'tutor.10c': 'kelas10c',
     'tutor.10d': 'kelas10d',
+    'tutor.11a': 'kelas11a',
+    'tutor.11b': 'kelas11b',
+    'tutor.11c': 'kelas11c',
+    'tutor.11d': 'kelas11d',
+    'tutor.12a': 'kelas12a',
+    'tutor.12b': 'kelas12b',
+    'tutor.12c': 'kelas12c',
   }
 
   ensurePlainPasswordColumn()
