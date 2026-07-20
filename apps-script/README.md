@@ -88,6 +88,17 @@ you've deployed a new version after any recent Backend.gs change via
 **Deploy → Manage deployments → Edit → New version**). `FAIL` means the
 bug is in this backend — save the Logs output, that's what to debug from.
 
+## Creating tutor accounts for a batch of classes
+
+Edit `TARGET_CLASS_NAMES` at the top of `createTutorsForClasses` in
+Backend.gs to the class **names** you need tutors for (matched against the
+Classes sheet, not hardcoded ids — safer if classes ever get renumbered).
+Run it → **View → Logs** for each new account's username and one-time
+plaintext password. Username is `tutor.` + the class name lowercased
+(e.g. `7A` → `tutor.7a`). Safe to re-run — it skips any class name it
+can't find and any username that already exists, so you can add more
+class names and run it again later without duplicating existing accounts.
+
 ## Lost a password?
 
 Check the `plainPassword` column in the Users sheet first. If that's

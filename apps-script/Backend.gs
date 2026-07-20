@@ -769,6 +769,69 @@ function resetPassword(username) {
 }
 
 /**
+ * Creates one tutor account per class name listed in TARGET_CLASS_NAMES
+ * below, looked up dynamically against the Classes sheet (not a
+ * hardcoded class id — safer if classes ever get renumbered again).
+ * Username is "tutor." + the class name lowercased (e.g. "7A" ->
+ * "tutor.7a"). Skips any class it can't find and any username that
+ * already exists, so it's safe to edit the list and re-run. Logs each
+ * new account's plaintext password once, same as seedUsers/resetPassword.
+ *
+ * Edit TARGET_CLASS_NAMES to match whichever classes you actually need
+ * tutors for — this is a one-off admin script, not meant to be run
+ * unmodified forever.
+ */
+function createTutorsForClasses() {
+  var TARGET_CLASS_NAMES = ['7A', '7B', '7C', '7D', '7E', '10A', '10B', '10C', '10D']
+
+  ensurePlainPasswordColumn()
+
+  var classByName = {}
+  readAll(SHEET_NAMES.CLASSES).forEach(function (c) {
+    classByName[normalizeId(c.name)] = c
+  })
+
+  var existingUsernames = {}
+  readAll(SHEET_NAMES.USERS).forEach(function (u) {
+    existingUsernames[normalizeId(u.username)] = true
+  })
+
+  var created = 0
+  TARGET_CLASS_NAMES.forEach(function (className) {
+    var cls = classByName[normalizeId(className)]
+    if (!cls) {
+      Logger.log('No class found named "' + className + '" in the Classes sheet — skipping.')
+      return
+    }
+
+    var username = 'tutor.' + className.toLowerCase()
+    if (existingUsernames[normalizeId(username)]) {
+      Logger.log('Username "' + username + '" already exists — skipping.')
+      return
+    }
+
+    var password = Utilities.getUuid().slice(0, 8)
+    var salt = generateSalt()
+    appendRowObject(SHEET_NAMES.USERS, {
+      id: Utilities.getUuid(),
+      username: username,
+      password: hashPassword(password, salt),
+      plainPassword: password,
+      salt: salt,
+      role: ROLES.TUTOR,
+      assignedClass: cls.id,
+    })
+    Logger.log(
+      'Created tutor for ' + className + ' (' + cls.id + ') -> username: ' + username +
+      ' | password: ' + password + ' (shown once, save it now)',
+    )
+    created++
+  })
+
+  Logger.log('Done. Created ' + created + ' new tutor account(s).')
+}
+
+/**
  * One-time repair for rows added by hand directly in the sheet (e.g. pasted
  * tutor rows without password/salt, or a Classes tab missing entries that
  * tutors were already assigned to). Safe to re-run — every step only
