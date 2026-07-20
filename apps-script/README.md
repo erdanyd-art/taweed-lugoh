@@ -99,6 +99,14 @@ plaintext password. Username is `tutor.` + the class name lowercased
 can't find and any username that already exists, so you can add more
 class names and run it again later without duplicating existing accounts.
 
+## Want an easier-to-remember password instead of a random one?
+
+Edit `CUSTOM_PASSWORDS` at the top of `setCustomPasswords` in Backend.gs
+with the username → password pairs you want, then Run. It updates both
+the login hash and the `plainPassword` column, so unlike hand-editing
+`plainPassword` directly in the sheet (which would only change what's
+*displayed*, not what login actually checks), this keeps them in sync.
+
 ## Lost a password?
 
 Check the `plainPassword` column in the Users sheet first. If that's

@@ -832,6 +832,52 @@ function createTutorsForClasses() {
 }
 
 /**
+ * Sets a password YOU choose (instead of a random generated one) for
+ * specific accounts. Edit CUSTOM_PASSWORDS below with username -> desired
+ * password pairs, then Run. Updates both the login hash and the
+ * plainPassword column so they stay consistent. Skips any username it
+ * can't find. Short/simple passwords are an easier-to-remember tradeoff —
+ * fine for a small internal tool, just don't reuse a real personal
+ * password here since plainPassword keeps it readable in the sheet.
+ */
+function setCustomPasswords() {
+  var CUSTOM_PASSWORDS = {
+    'tutor.7a': 'kelas7a',
+    'tutor.7b': 'kelas7b',
+    'tutor.7c': 'kelas7c',
+    'tutor.7d': 'kelas7d',
+    'tutor.7e': 'kelas7e',
+    'tutor.10a': 'kelas10a',
+    'tutor.10b': 'kelas10b',
+    'tutor.10c': 'kelas10c',
+    'tutor.10d': 'kelas10d',
+  }
+
+  ensurePlainPasswordColumn()
+  var users = readAll(SHEET_NAMES.USERS)
+
+  Object.keys(CUSTOM_PASSWORDS).forEach(function (username) {
+    var user = users.filter(function (u) {
+      return u.username === username
+    })[0]
+    if (!user) {
+      Logger.log('No user found with username "' + username + '" — skipping.')
+      return
+    }
+    var password = CUSTOM_PASSWORDS[username]
+    var salt = generateSalt()
+    updateRowByColumn(SHEET_NAMES.USERS, 'id', user.id, {
+      password: hashPassword(password, salt),
+      plainPassword: password,
+      salt: salt,
+    })
+    Logger.log('Password updated for ' + username + ' -> ' + password)
+  })
+
+  Logger.log('Done.')
+}
+
+/**
  * One-time repair for rows added by hand directly in the sheet (e.g. pasted
  * tutor rows without password/salt, or a Classes tab missing entries that
  * tutors were already assigned to). Safe to re-run — every step only
