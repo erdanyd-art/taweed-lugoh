@@ -1222,14 +1222,20 @@ function fixMeetingColumnType() {
  * to (7000000000000) — the same class of bug fixed for the meeting column
  * above, now also guarded against in saveAttendance() going forward.
  *
- * Each corrupted numeric value is reconstructed with toExponential() (not
- * String(), which would print the expanded decimal form instead of the
- * "7e12" shape we actually want back) and only written back once it's
- * confirmed to match a real id in the Students sheet — never guessed.
- * Anything that can't be confidently matched is logged, not touched, so a
- * genuinely ambiguous case can be fixed by hand instead of miscorrected.
+ * Checks every row regardless of whether the cell currently holds an
+ * actual number or a string — a cell can end up holding the *text*
+ * "7.00E+12" instead (e.g. from re-typing the displayed value after the
+ * column was already locked to plain text), which looks fixed but isn't:
+ * it no longer matches any real Students.id either. Either shape is
+ * reconstructed the same way, with toExponential() (not String(), which
+ * would print the expanded decimal form instead of the "7e12" shape we
+ * actually want back), and only written back once it's confirmed to
+ * match a real id in the Students sheet — never guessed. Anything that
+ * can't be confidently matched is logged, not touched, so a genuinely
+ * ambiguous case can be fixed by hand instead of miscorrected.
  *
- * Safe to re-run — rows that are already text are left untouched.
+ * Safe to re-run — rows that already hold a real Students.id are left
+ * untouched.
  */
 function fixStudentIdColumnType() {
   var sheet = getOrCreateSheet(SHEET_NAMES.ATTENDANCE)
@@ -1251,18 +1257,22 @@ function fixStudentIdColumnType() {
     var fixed = 0
     var unresolved = []
     for (var i = 0; i < values.length; i++) {
-      var value = values[i][0]
-      if (typeof value !== 'number') continue
+      var raw = values[i][0]
+      if (raw === '' || raw === null || raw === undefined) continue
+      if (knownIds[String(raw).trim()]) continue // already a real id, whatever its JS type
 
-      var match = /^(-?\d+(?:\.\d+)?)e\+(\d+)$/.exec(value.toExponential())
+      var numeric = Number(raw)
+      if (isNaN(numeric)) continue // not number-like at all — not this bug, leave it alone
+
+      var match = /^(-?\d+(?:\.\d+)?)e\+(\d+)$/.exec(numeric.toExponential())
       var candidate = match ? match[1] + 'e' + match[2] : null
 
       if (candidate && knownIds[candidate]) {
         sheet.getRange(i + 2, studentIdCol).setValue(candidate)
-        Logger.log('row ' + (i + 2) + ': studentId ' + value + ' fixed to "' + candidate + '"')
+        Logger.log('row ' + (i + 2) + ': studentId ' + raw + ' fixed to "' + candidate + '"')
         fixed++
       } else {
-        unresolved.push({ row: i + 2, value: value, candidate: candidate })
+        unresolved.push({ row: i + 2, value: raw, candidate: candidate })
       }
     }
     Logger.log('Fixed ' + fixed + ' already-converted cell(s).')
