@@ -471,6 +471,7 @@ function saveAttendance(user, payload) {
   var headers = getHeaders(sheet)
   var statusCol = headers.indexOf('status') + 1
   var meetingCol = headers.indexOf('meeting') + 1
+  var studentIdCol = headers.indexOf('studentId') + 1
   var rowByKey = {}
   readAll(SHEET_NAMES.ATTENDANCE).forEach(function (row) {
     // normalizeMeetingValue: the row we're keying off may already have
@@ -505,6 +506,14 @@ function saveAttendance(user, payload) {
     // normalizeMeetingValue() for what that conversion breaks.
     if (meetingCol > 0) {
       sheet.getRange(startRow, meetingCol, newRows.length, 1).setNumberFormat('@')
+    }
+    // Same protection for studentId: some student ids (e.g. "7e12", a
+    // class-7 roster entry) are valid scientific notation syntax, so
+    // Sheets silently rewrites that cell to the number 7e12 on write
+    // unless the column is already locked to plain text. That breaks
+    // every lookup keyed by studentId for that row (shows as #N/A).
+    if (studentIdCol > 0) {
+      sheet.getRange(startRow, studentIdCol, newRows.length, 1).setNumberFormat('@')
     }
     sheet.getRange(startRow, 1, newRows.length, headers.length).setValues(newRows)
   }
@@ -1188,6 +1197,71 @@ function fixMeetingColumnType() {
   // text so this can't silently happen again.
   sheet.getRange(1, meetingCol, sheet.getMaxRows(), 1).setNumberFormat('@')
   Logger.log('Meeting column locked to plain text format.')
+}
+
+/**
+ * Repairs Attendance rows whose studentId was silently rewritten from a
+ * scientific-notation-looking id (e.g. "7e12") to the number it evaluates
+ * to (7000000000000) — the same class of bug fixed for the meeting column
+ * above, now also guarded against in saveAttendance() going forward.
+ *
+ * Each corrupted numeric value is reconstructed with toExponential() (not
+ * String(), which would print the expanded decimal form instead of the
+ * "7e12" shape we actually want back) and only written back once it's
+ * confirmed to match a real id in the Students sheet — never guessed.
+ * Anything that can't be confidently matched is logged, not touched, so a
+ * genuinely ambiguous case can be fixed by hand instead of miscorrected.
+ *
+ * Safe to re-run — rows that are already text are left untouched.
+ */
+function fixStudentIdColumnType() {
+  var sheet = getOrCreateSheet(SHEET_NAMES.ATTENDANCE)
+  var headers = getHeaders(sheet)
+  var studentIdCol = headers.indexOf('studentId') + 1
+  if (studentIdCol === 0) {
+    Logger.log('No "studentId" column found — nothing to fix.')
+    return
+  }
+
+  var knownIds = {}
+  readAll(SHEET_NAMES.STUDENTS).forEach(function (s) {
+    knownIds[String(s.id)] = true
+  })
+
+  var lastRow = sheet.getLastRow()
+  if (lastRow >= 2) {
+    var values = sheet.getRange(2, studentIdCol, lastRow - 1, 1).getValues()
+    var fixed = 0
+    var unresolved = []
+    for (var i = 0; i < values.length; i++) {
+      var value = values[i][0]
+      if (typeof value !== 'number') continue
+
+      var match = /^(-?\d+(?:\.\d+)?)e\+(\d+)$/.exec(value.toExponential())
+      var candidate = match ? match[1] + 'e' + match[2] : null
+
+      if (candidate && knownIds[candidate]) {
+        sheet.getRange(i + 2, studentIdCol).setValue(candidate)
+        Logger.log('row ' + (i + 2) + ': studentId ' + value + ' fixed to "' + candidate + '"')
+        fixed++
+      } else {
+        unresolved.push({ row: i + 2, value: value, candidate: candidate })
+      }
+    }
+    Logger.log('Fixed ' + fixed + ' already-converted cell(s).')
+    if (unresolved.length > 0) {
+      Logger.log(
+        'Could not confidently resolve ' + unresolved.length + ' row(s) — ' +
+          'reconstructed id did not match any Students.id, left untouched ' +
+          'for manual review: ' + JSON.stringify(unresolved),
+      )
+    }
+  }
+
+  // Lock the whole column (including headroom for future rows) to plain
+  // text so this can't silently happen again — mirrors fixMeetingColumnType().
+  sheet.getRange(1, studentIdCol, sheet.getMaxRows(), 1).setNumberFormat('@')
+  Logger.log('studentId column locked to plain text format.')
 }
 
 /**
