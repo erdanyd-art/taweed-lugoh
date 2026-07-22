@@ -472,6 +472,14 @@ function saveAttendance(user, payload) {
   var statusCol = headers.indexOf('status') + 1
   var meetingCol = headers.indexOf('meeting') + 1
   var studentIdCol = headers.indexOf('studentId') + 1
+  // "Nama" is a manually-added convenience column (not in SHEET_HEADERS,
+  // so a brand-new sheet won't have it) holding the student's name as a
+  // plain written value rather than a live VLOOKUP formula — a formula
+  // breaks the moment studentId is ever corrupted (see
+  // fixStudentIdColumnType) and Apps Script's appendRow doesn't extend
+  // formulas onto new rows anyway. Written on every save so it's always
+  // in sync, self-healing if it was ever wrong or blank.
+  var nameCol = headers.indexOf('Nama') + 1
   var rowByKey = {}
   readAll(SHEET_NAMES.ATTENDANCE).forEach(function (row) {
     // normalizeMeetingValue: the row we're keying off may already have
@@ -484,13 +492,22 @@ function saveAttendance(user, payload) {
 
   var newRows = []
   var results = payload.map(function (record) {
+    var student = studentsById[String(record.studentId)]
     var existing = rowByKey[record.studentId + '::' + record.meeting]
     if (existing) {
       sheet.getRange(existing._row, statusCol).setValue(record.status)
+      if (nameCol > 0) {
+        sheet.getRange(existing._row, nameCol).setValue(student.name)
+      }
     } else {
       newRows.push(
         headers.map(function (key) {
-          var value = { studentId: record.studentId, meeting: record.meeting, status: record.status }[key]
+          var value = {
+            studentId: record.studentId,
+            meeting: record.meeting,
+            status: record.status,
+            Nama: student.name,
+          }[key]
           return value === undefined ? '' : value
         }),
       )
@@ -1262,6 +1279,56 @@ function fixStudentIdColumnType() {
   // text so this can't silently happen again — mirrors fixMeetingColumnType().
   sheet.getRange(1, studentIdCol, sheet.getMaxRows(), 1).setNumberFormat('@')
   Logger.log('studentId column locked to plain text format.')
+}
+
+/**
+ * One-time backfill: writes the correct student name as a plain value
+ * into the "Nama" column for every existing Attendance row, looked up by
+ * studentId from the Students sheet. saveAttendance() keeps this column
+ * in sync for every future save (see the comment there for why it's a
+ * written value rather than a VLOOKUP formula); this just catches every
+ * row that already existed before that changed, in one pass instead of
+ * waiting for each to be saved again through the app.
+ *
+ * Run fixStudentIdColumnType() first if studentId values are still
+ * corrupted — a row can only be matched to a name once its id is a real
+ * Students.id again.
+ *
+ * Safe to re-run — every row is recomputed from the current Students
+ * sheet each time.
+ */
+function backfillAttendanceNames() {
+  var sheet = getOrCreateSheet(SHEET_NAMES.ATTENDANCE)
+  var headers = getHeaders(sheet)
+  var nameCol = headers.indexOf('Nama') + 1
+  if (nameCol === 0) {
+    Logger.log('No "Nama" column found — nothing to backfill.')
+    return
+  }
+
+  var studentsById = buildStudentsById(readAll(SHEET_NAMES.STUDENTS))
+  var rows = readAll(SHEET_NAMES.ATTENDANCE)
+  var filled = 0
+  var missing = []
+
+  rows.forEach(function (row) {
+    var student = studentsById[String(row.studentId)]
+    if (student) {
+      sheet.getRange(row._row, nameCol).setValue(student.name)
+      filled++
+    } else {
+      missing.push({ row: row._row, studentId: row.studentId })
+    }
+  })
+
+  Logger.log('Filled Nama for ' + filled + ' row(s).')
+  if (missing.length > 0) {
+    Logger.log(
+      missing.length + ' row(s) have a studentId that does not match any ' +
+        'Students.id — run fixStudentIdColumnType first if these look like ' +
+        'corrupted ids: ' + JSON.stringify(missing),
+    )
+  }
 }
 
 /**
